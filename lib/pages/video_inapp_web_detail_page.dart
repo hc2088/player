@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:get/get.dart';
+import 'package:intl/intl.dart';
 
 import '../config/app_config.dart';
 import '../config/event_names.dart';
@@ -110,42 +111,41 @@ class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
 
   void _showChangeUrlDialog() {
     final TextEditingController urlController =
-    TextEditingController(text: currentUrlNotifier.value);
+        TextEditingController(text: currentUrlNotifier.value);
     showDialog(
       context: context,
-      builder: (context) =>
-          AlertDialog(
-            title: const Text('修改 URL'),
-            content: TextField(
-              controller: urlController,
-              decoration: InputDecoration(
-                hintText: '请输入新网址',
-                suffixIcon: IconButton(
-                  icon: const Icon(Icons.clear),
-                  onPressed: () => urlController.clear(),
-                ),
-              ),
-              keyboardType: TextInputType.url,
-              textInputAction: TextInputAction.done,
+      builder: (context) => AlertDialog(
+        title: const Text('修改 URL'),
+        content: TextField(
+          controller: urlController,
+          decoration: InputDecoration(
+            hintText: '请输入新网址',
+            suffixIcon: IconButton(
+              icon: const Icon(Icons.clear),
+              onPressed: () => urlController.clear(),
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('取消'),
-              ),
-              TextButton(
-                onPressed: () {
-                  final newUrl = urlController.text.trim();
-                  if (newUrl.isNotEmpty) {
-                    currentUrlNotifier.value = newUrl;
-                  }
-                  AppConfig.setCustomHomePageUrl(newUrl);
-                  Navigator.of(context).pop();
-                },
-                child: const Text('确定'),
-              ),
-            ],
           ),
+          keyboardType: TextInputType.url,
+          textInputAction: TextInputAction.done,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () {
+              final newUrl = urlController.text.trim();
+              if (newUrl.isNotEmpty) {
+                currentUrlNotifier.value = newUrl;
+              }
+              AppConfig.setCustomHomePageUrl(newUrl);
+              Navigator.of(context).pop();
+            },
+            child: const Text('确定'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -216,6 +216,16 @@ class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
     }
   }
 
+  String _generateFileName(String? title, int index) {
+    final now = DateTime.now();
+    final timeStr = DateFormat('yyyyMMddHHmmss').format(now);
+
+    final safeTitle =
+        (title != null && title.trim().isNotEmpty) ? title : timeStr;
+
+    return '${safeTitle}_$index';
+  }
+
   Future<void> _handleExtract() async {
     final downloadService = Get.find<DownloadService>();
 
@@ -238,13 +248,17 @@ class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
     if (urls.isNotEmpty) {
       int addedCount = 0;
 
-      for (final url in urls) {
+      for (final entry in urls.asMap().entries) {
+        final index = entry.key;
+        final url = entry.value;
         final existed = downloadService.tasks.any((task) => task.url == url);
+
         if (!existed) {
+          final uniqueFileName = _generateFileName(_pageTitle, index);
           downloadService.addDownloadTask(
             url,
             currentUrl,
-            fileName: _pageTitle, // ✅ 传入当前网页链接
+            fileName: uniqueFileName, // ✅ 传入当前网页链接
           );
           addedCount++;
         }
@@ -303,13 +317,11 @@ class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
                   curve: Curves.easeInOut,
                   child: AppBar(
                     title: Text(_pageTitle.isEmpty ? '' : _pageTitle),
-                    leading: ModalRoute
-                        .of(context)
-                        ?.canPop ?? false
+                    leading: ModalRoute.of(context)?.canPop ?? false
                         ? IconButton(
-                      icon: const Icon(Icons.arrow_back),
-                      onPressed: () => Get.back(),
-                    )
+                            icon: const Icon(Icons.arrow_back),
+                            onPressed: () => Get.back(),
+                          )
                         : null,
                     actions: [
                       IconButton(
@@ -334,7 +346,7 @@ class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
                 Expanded(
                   child: InAppWebView(
                     initialUrlRequest:
-                    URLRequest(url: WebUri(currentUrlNotifier.value)),
+                        URLRequest(url: WebUri(currentUrlNotifier.value)),
                     initialSettings: InAppWebViewSettings(
                       allowsBackForwardNavigationGestures: true,
                     ),

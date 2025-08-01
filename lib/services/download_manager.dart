@@ -4,6 +4,7 @@ import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
 import 'package:ffmpeg_kit_flutter_new/ffmpeg_session.dart';
 import 'package:ffmpeg_kit_flutter_new/ffprobe_kit.dart';
 import 'package:ffmpeg_kit_flutter_new/return_code.dart';
+import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/download_task.dart';
 
@@ -26,16 +27,7 @@ class DownloadManager {
   }
 
   static String _formatDateTime(DateTime dt) {
-    String twoDigits(int n) => n.toString().padLeft(2, '0');
-
-    final year = dt.year.toString();
-    final month = twoDigits(dt.month);
-    final day = twoDigits(dt.day);
-    final hour = twoDigits(dt.hour);
-    final minute = twoDigits(dt.minute);
-    final second = twoDigits(dt.second);
-
-    return '$year$month$day$hour$minute$second';
+    return DateFormat('yyyyMMddHHmmss').format(dt);
   }
 
   // ✅ 公用方法：根据任务获取文件路径
