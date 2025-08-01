@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
 import 'package:ffmpeg_kit_flutter_new/ffmpeg_session.dart';
 import 'package:ffmpeg_kit_flutter_new/ffprobe_kit.dart';
@@ -41,22 +43,37 @@ class DownloadManager {
     final dir = await _getDownloadDir();
     final now = DateTime.now();
     final formattedTime = _formatDateTime(now);
-    final fileName = (task.fileName?.trim().isNotEmpty ?? false)
-        ? task.fileName?.trim()
-        : 'video_${formattedTime}.mp4';
+
+    // 初步获取文件名
+    String fileName = (task.fileName?.trim().isNotEmpty ?? false)
+        ? task.fileName!.trim()
+        : 'video_$formattedTime.mp4';
+
+    // ✅ 强制添加后缀（避免有中文但没有.mp4 的情况）
+    if (!fileName.toLowerCase().endsWith('.mp4')) {
+      fileName += '.mp4';
+    }
+
+    // 赋值回 task
     task.fileName = fileName;
-    return '$dir/$fileName';
+
+    // 组合完整路径
+    final rawPath = '$dir/$fileName';
+
+    // ✅ 转为平台安全路径，防止中文/特殊字符报错
+    final safePath = Uri.file(rawPath).toFilePath(windows: Platform.isWindows);
+
+    return safePath;
   }
 
   static Future<void> download(
     DownloadTask task,
     Function(double) onProgress,
   ) async {
-    final filePath = await getFilePath(task);
-
     // 获取视频总时长
     final duration = await _getDuration(task.url);
 
+    final filePath = await getFilePath(task);
     final command = "-y -i '${task.url}' -c copy '$filePath'";
 
     // 关键点：先启动 async 会返回 Future<FFmpegSession>

@@ -190,6 +190,13 @@ class _VideoWebDetailPageState extends State<VideoWebDetailPage> {
 
   Future<void> _handleExtract() async {
     final downloadService = Get.find<DownloadService>();
+
+    // ✅ 获取当前网页的 URL
+    final currentUrl = await _controller.currentUrl();
+    if (currentUrl == null || currentUrl.isEmpty) {
+      Get.snackbar('视频链接提取', '无法获取当前网页地址');
+      return;
+    }
     final executor = WebViewScriptExecutor(_controller);
     final urls = await VideoExtractor.extractVideoUrls(executor);
 
@@ -198,7 +205,11 @@ class _VideoWebDetailPageState extends State<VideoWebDetailPage> {
       for (final url in urls) {
         final existed = downloadService.tasks.any((task) => task.url == url);
         if (!existed) {
-          downloadService.addDownloadTask(url);
+          // ✅ 添加任务时记录来源网页
+          downloadService.addDownloadTask(
+            url,
+            currentUrl,
+          );
           addedCount++;
         }
       }

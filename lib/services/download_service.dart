@@ -18,13 +18,14 @@ class DownloadService extends GetxController {
     loadTasksFromStorage();
   }
 
-  void addDownloadTask(String url, {String? fileName}) {
+  void addDownloadTask(String url, String originPageUrl, {String? fileName}) {
     if (tasks.any((task) => task.url == url)) {
       print('任务已存在: $url');
       return;
     }
 
-    final task = DownloadTask(url: url, fileName: fileName);
+    final task = DownloadTask(
+        url: url, fileName: fileName, originPageUrl: originPageUrl);
     tasks.add(task);
     saveTasksToStorage();
     _startDownload(task);

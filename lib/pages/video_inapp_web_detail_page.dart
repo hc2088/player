@@ -197,8 +197,17 @@ class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
 
   Future<void> _handleExtract() async {
     final downloadService = Get.find<DownloadService>();
+
     if (_controller == null) {
       Get.snackbar('视频链接提取', '未找到视频链接');
+      return;
+    }
+
+    // ✅ 获取当前网页的 URL
+    final currentUrl = (await _controller!.getUrl())?.toString();
+
+    if (currentUrl == null || currentUrl.isEmpty) {
+      Get.snackbar('视频链接提取', '无法获取当前网页地址');
       return;
     }
 
@@ -207,17 +216,20 @@ class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
 
     if (urls.isNotEmpty) {
       int addedCount = 0;
+
       for (final url in urls) {
         final existed = downloadService.tasks.any((task) => task.url == url);
         if (!existed) {
-          downloadService.addDownloadTask(url);
+          downloadService.addDownloadTask(
+            url,
+            currentUrl,
+            fileName: _pageTitle, // ✅ 传入当前网页链接
+          );
           addedCount++;
         }
       }
+
       Get.snackbar('视频链接提取成功', '共提取 ${urls.length} 个链接，已添加 $addedCount 个到下载列表');
-      // if (addedCount > 0) {
-      //   Get.to(() => const DownloadListPage());
-      // }
     } else {
       Get.snackbar('视频链接提取', '未找到视频链接');
     }

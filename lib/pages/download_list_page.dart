@@ -47,23 +47,30 @@ class DownloadListPage extends StatelessWidget {
                 final filePath = snapshot.data ?? '';
                 return ListTile(
                   title: Text(task.fileName ?? task.url),
+                  onTap: () {
+                    Get.toNamed(RouteHelper.videoWebDetail, arguments: {
+                      'url': (task.originPageUrl.length > 0)
+                          ? task.originPageUrl
+                          : task.url
+                    });
+                  },
                   subtitle: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text('状态: ${task.status.name}'),
                       if (task.status == DownloadStatus.completed)
-                        Text(
-                          '文件路径: $filePath',
-                          style:
-                              const TextStyle(fontSize: 12, color: Colors.grey),
-                        ),
-                      if (task.status == DownloadStatus.downloading) ...[
-                        Text(
-                          '下载进度：${(task.progress * 100).toStringAsFixed(1)}%',
-                          style: const TextStyle(
-                              fontSize: 12, color: Colors.blueAccent),
-                        ),
-                      ],
+                        // Text(
+                        //   '文件路径: $filePath',
+                        //   style:
+                        //       const TextStyle(fontSize: 12, color: Colors.grey),
+                        // ),
+                        if (task.status == DownloadStatus.downloading) ...[
+                          Text(
+                            '下载进度：${(task.progress * 100).toStringAsFixed(1)}%',
+                            style: const TextStyle(
+                                fontSize: 12, color: Colors.blueAccent),
+                          ),
+                        ],
                     ],
                   ),
                   trailing: Row(

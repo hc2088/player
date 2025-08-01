@@ -2,6 +2,7 @@ enum DownloadStatus { pending, downloading, completed, failed, canceled }
 
 class DownloadTask {
   String url;
+  String originPageUrl;
   String? fileName;
   double progress;
   DownloadStatus status;
@@ -11,6 +12,7 @@ class DownloadTask {
 
   DownloadTask({
     required this.url,
+    required this.originPageUrl,
     this.fileName,
     this.progress = 0.0,
     this.status = DownloadStatus.pending,
@@ -19,7 +21,8 @@ class DownloadTask {
 
   factory DownloadTask.fromJson(Map<String, dynamic> json) {
     return DownloadTask(
-      url: json['url'],
+      url: json['url'] ?? "",
+      originPageUrl: json['originPageUrl'] ?? "",
       fileName: json['fileName'],
       progress: (json['progress'] as num).toDouble(),
       status: DownloadStatus.values[json['status']],
@@ -29,6 +32,7 @@ class DownloadTask {
   Map<String, dynamic> toJson() {
     return {
       'url': url,
+      'originPageUrl': originPageUrl,
       'fileName': fileName,
       'progress': progress,
       'status': status.index,

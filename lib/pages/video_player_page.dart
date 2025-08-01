@@ -62,23 +62,25 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('视频播放'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Get.back(),
-        ),
-      ),
-      body: _isFileExists
-          ? (_chewieController != null
-              ? Chewie(controller: _chewieController!)
-              : const Center(child: CircularProgressIndicator()))
-          : Center(
-              child: Text(
-                '文件不存在，无法播放',
-                style: TextStyle(fontSize: 16, color: Colors.red),
+      // appBar: AppBar(
+      //   title: const Text('视频播放'),
+      //   leading: IconButton(
+      //     icon: const Icon(Icons.arrow_back),
+      //     onPressed: () => Get.back(),
+      //   ),
+      // ),
+      body: SafeArea(
+        child: _isFileExists
+            ? (_chewieController != null
+                ? Chewie(controller: _chewieController!)
+                : const Center(child: CircularProgressIndicator()))
+            : Center(
+                child: Text(
+                  '文件不存在，无法播放',
+                  style: TextStyle(fontSize: 16, color: Colors.red),
+                ),
               ),
-            ),
+      ),
     );
   }
 }
