@@ -1,3 +1,20 @@
+<p align="center">
+  <a href="https://www.jianshu.com/u/29f69849848a">
+    <img width="200" src="ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-60x60@2x.png">
+  </a>
+</p>
+
+<h1 align="center">视界宝</h1>
+<div align="center">
+
+一键抓取网页视频，离线畅享高清视界
+
+
+</div>
+
+
+![](demo/Demo.png)
+
 # 视界宝 - 您掌中的网页视频捕获专家
 
 视界宝是一款功能强大的Flutter视频下载与播放应用，专注于从网页中智能提取视频链接，并通过FFmpegKit实现高效稳定的本地下载，方便用户离线观看和管理视频文件。
