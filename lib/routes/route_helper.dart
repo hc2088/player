@@ -31,9 +31,17 @@ class RouteHelper {
     GetPage(name: home, page: () => const HomePage()),
     GetPage(name: downloadList, page: () => const DownloadListPage()),
     GetPage(
-        name: videoWebDetail,
-        page: () => const VideoInAppWebDetailPage(
-            defaultUrl: AppConfig.defaultVideoUrl)),
+      name: videoWebDetail,
+      page: () => FutureBuilder<String>(
+        future: AppConfig.getDefaultVideoUrl(),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          return VideoInAppWebDetailPage(defaultUrl: snapshot.data!);
+        },
+      ),
+    ),
     GetPage(name: player, page: () => const VideoPlayerPage()),
     GetPage(name: favorite, page: () => const FavoriteListPage()),
   ];

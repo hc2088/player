@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:get/get.dart';
 
+import '../config/app_config.dart';
 import '../config/event_names.dart';
 import '../models/favorite.dart';
 import '../routes/route_helper.dart';
@@ -136,6 +137,7 @@ class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
               if (newUrl.isNotEmpty) {
                 currentUrlNotifier.value = newUrl;
               }
+              AppConfig.setCustomHomePageUrl(newUrl);
               Navigator.of(context).pop();
             },
             child: const Text('确定'),
@@ -201,16 +203,6 @@ class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
       Get.snackbar('添加到收藏', success ? '已成功添加到收藏' : '添加收藏失败');
       _checkIfFavorite(currentUrl);
     }
-  }
-
-  String? _filterTitle(String title) {
-    final reg = RegExp(r'[^\u4e00-\u9fa5a-zA-Z0-9]');
-    final cleaned = title.replaceAll(reg, '').trim();
-    if (cleaned.isEmpty) return null;
-    final maxLength = 10;
-    return cleaned.length > maxLength
-        ? cleaned.substring(0, maxLength)
-        : cleaned;
   }
 
   Future<void> _handleExtract() async {
