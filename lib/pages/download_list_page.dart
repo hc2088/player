@@ -27,7 +27,7 @@ class DownloadListPage extends StatelessWidget {
           IconButton(
             icon: const Icon(Icons.favorite),
             tooltip: '收藏列表',
-            onPressed: () => Get.toNamed(RouteHelper.favorite),
+            onPressed: () => RouteHelper.toUnique(RouteHelper.favorite),
           ),
         ],
       ),

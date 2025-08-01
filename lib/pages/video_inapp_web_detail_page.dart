@@ -6,6 +6,7 @@ import 'package:get/get.dart';
 
 import '../config/app_config.dart';
 import '../config/event_names.dart';
+import '../controllers/home_page_controller.dart';
 import '../models/favorite.dart';
 import '../routes/route_helper.dart';
 import '../services/download_service.dart';
@@ -109,41 +110,42 @@ class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
 
   void _showChangeUrlDialog() {
     final TextEditingController urlController =
-        TextEditingController(text: currentUrlNotifier.value);
+    TextEditingController(text: currentUrlNotifier.value);
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('修改 URL'),
-        content: TextField(
-          controller: urlController,
-          decoration: InputDecoration(
-            hintText: '请输入新网址',
-            suffixIcon: IconButton(
-              icon: const Icon(Icons.clear),
-              onPressed: () => urlController.clear(),
+      builder: (context) =>
+          AlertDialog(
+            title: const Text('修改 URL'),
+            content: TextField(
+              controller: urlController,
+              decoration: InputDecoration(
+                hintText: '请输入新网址',
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.clear),
+                  onPressed: () => urlController.clear(),
+                ),
+              ),
+              keyboardType: TextInputType.url,
+              textInputAction: TextInputAction.done,
             ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('取消'),
+              ),
+              TextButton(
+                onPressed: () {
+                  final newUrl = urlController.text.trim();
+                  if (newUrl.isNotEmpty) {
+                    currentUrlNotifier.value = newUrl;
+                  }
+                  AppConfig.setCustomHomePageUrl(newUrl);
+                  Navigator.of(context).pop();
+                },
+                child: const Text('确定'),
+              ),
+            ],
           ),
-          keyboardType: TextInputType.url,
-          textInputAction: TextInputAction.done,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () {
-              final newUrl = urlController.text.trim();
-              if (newUrl.isNotEmpty) {
-                currentUrlNotifier.value = newUrl;
-              }
-              AppConfig.setCustomHomePageUrl(newUrl);
-              Navigator.of(context).pop();
-            },
-            child: const Text('确定'),
-          ),
-        ],
-      ),
     );
   }
 
@@ -200,7 +202,16 @@ class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
       success = await favoriteService.addFavorite(
         Favorite(url: currentUrl, title: _pageTitle),
       );
-      Get.snackbar('添加到收藏', success ? '已成功添加到收藏' : '添加收藏失败');
+      Get.snackbar(
+        '添加到收藏',
+        success ? '已成功添加到收藏' : '添加收藏失败',
+        mainButton: TextButton(
+          onPressed: () {
+            RouteHelper.toUnique(RouteHelper.favorite);
+          },
+          child: const Text('前往收藏页'),
+        ),
+      );
       _checkIfFavorite(currentUrl);
     }
   }
@@ -239,7 +250,17 @@ class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
         }
       }
 
-      Get.snackbar('视频链接提取成功', '共提取 ${urls.length} 个链接，已添加 $addedCount 个到下载列表');
+      Get.snackbar(
+        '视频链接提取成功',
+        '共提取 ${urls.length} 个链接，已添加 $addedCount 个到下载列表',
+        mainButton: TextButton(
+          onPressed: () {
+            bool foundHome = false;
+            _backToHomeAndSwitchTab(1);
+          },
+          child: const Text('前往下载页'),
+        ),
+      );
     } else {
       Get.snackbar('视频链接提取', '未找到视频链接');
     }
@@ -247,6 +268,25 @@ class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
 
   void _handleGoToFavorites() {
     Get.to(() => const FavoriteListPage());
+  }
+
+  void _backToHomeAndSwitchTab(int index) {
+    bool found = false;
+    Get.until((route) {
+      if (route.settings.name == RouteHelper.home) {
+        found = true;
+        return true;
+      }
+      return false;
+    });
+
+    if (!found) {
+      Get.offAllNamed(RouteHelper.home);
+    }
+
+    Future.delayed(const Duration(milliseconds: 100), () {
+      Get.find<HomePageController>().switchToTab(index);
+    });
   }
 
   @override
@@ -263,11 +303,13 @@ class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
                   curve: Curves.easeInOut,
                   child: AppBar(
                     title: Text(_pageTitle.isEmpty ? '' : _pageTitle),
-                    leading: ModalRoute.of(context)?.canPop ?? false
+                    leading: ModalRoute
+                        .of(context)
+                        ?.canPop ?? false
                         ? IconButton(
-                            icon: const Icon(Icons.arrow_back),
-                            onPressed: () => Get.back(),
-                          )
+                      icon: const Icon(Icons.arrow_back),
+                      onPressed: () => Get.back(),
+                    )
                         : null,
                     actions: [
                       IconButton(
@@ -292,7 +334,7 @@ class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
                 Expanded(
                   child: InAppWebView(
                     initialUrlRequest:
-                        URLRequest(url: WebUri(currentUrlNotifier.value)),
+                    URLRequest(url: WebUri(currentUrlNotifier.value)),
                     initialSettings: InAppWebViewSettings(
                       allowsBackForwardNavigationGestures: true,
                     ),
