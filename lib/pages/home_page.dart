@@ -15,14 +15,21 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   final HomePageController controller = Get.put(HomePageController());
 
-  final List<Widget> _pages = [
-    RouteHelper.routes
-        .firstWhere((element) => element.name == RouteHelper.videoWebDetail)
-        .page(),
-    RouteHelper.routes
-        .firstWhere((element) => element.name == RouteHelper.downloadList)
-        .page(),
-  ];
+  late final List<Widget> _pages;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _pages = [
+      RouteHelper.routes
+          .firstWhere((element) => element.name == RouteHelper.videoWebDetail)
+          .page(),
+      RouteHelper.routes
+          .firstWhere((element) => element.name == RouteHelper.downloadList)
+          .page(),
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
+import 'package:player/main.dart';
 
 import '../config/app_config.dart';
 import '../config/event_names.dart';
@@ -38,6 +39,7 @@ class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
   final double _threshold = 30;
 
   StreamSubscription? _favoriteChangedSub;
+  final HomePageController homeController = Get.find();
 
   @override
   void initState() {
@@ -59,6 +61,12 @@ class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
         _checkIfFavorite(currentUrlNotifier.value);
       },
     );
+
+    // 监听双击事件
+    ever(homeController.webReloadEvent, (_) async {
+      final url = await AppConfig.getDefaultVideoUrl();
+      currentUrlNotifier.value = url;
+    });
   }
 
   @override
@@ -140,6 +148,8 @@ class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
                 currentUrlNotifier.value = newUrl;
               }
               AppConfig.setCustomHomePageUrl(newUrl);
+              // 显示提示
+              Get.snackbar('提示', '默认首页已修改为：$newUrl');
               Navigator.of(context).pop();
             },
             child: const Text('确定'),
