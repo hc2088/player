@@ -58,19 +58,19 @@ class DownloadListPage extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text('状态: ${task.status.name}'),
-                      if (task.status == DownloadStatus.completed)
-                        // Text(
-                        //   '文件路径: $filePath',
-                        //   style:
-                        //       const TextStyle(fontSize: 12, color: Colors.grey),
-                        // ),
-                        if (task.status == DownloadStatus.downloading) ...[
-                          Text(
-                            '下载进度：${(task.progress * 100).toStringAsFixed(1)}%',
-                            style: const TextStyle(
-                                fontSize: 12, color: Colors.blueAccent),
-                          ),
-                        ],
+                      // if (task.status == DownloadStatus.completed)
+                      // Text(
+                      //   '文件路径: $filePath',
+                      //   style:
+                      //       const TextStyle(fontSize: 12, color: Colors.grey),
+                      // ),
+                      if (task.status == DownloadStatus.downloading) ...[
+                        Text(
+                          '下载进度：${(task.progress * 100).toStringAsFixed(1)}%',
+                          style: const TextStyle(
+                              fontSize: 12, color: Colors.blueAccent),
+                        ),
+                      ],
                     ],
                   ),
                   trailing: Row(
