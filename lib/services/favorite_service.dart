@@ -49,9 +49,16 @@ class FavoriteService extends GetxService {
   Future<void> removeFavorite(Favorite fav) async {
     favorites.removeWhere((f) => f.url == fav.url);
     await saveFavorites();
-    // eventBus.fire(FavoriteChangedEvent(fav.url, false));
     emitEvent(FavoriteChangedEvent(
         name: EventNames.favoriteChanged, url: fav.url, isFavorite: false));
+  }
+
+  Future<bool> removeFavoriteUrl(String url) async {
+    favorites.removeWhere((f) => f.url == url);
+    await saveFavorites();
+    emitEvent(FavoriteChangedEvent(
+        name: EventNames.favoriteChanged, url: url, isFavorite: false));
+    return true;
   }
 
   bool isFavorite(String url) {

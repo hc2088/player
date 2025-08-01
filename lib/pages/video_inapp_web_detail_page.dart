@@ -11,7 +11,6 @@ import '../services/download_service.dart';
 import '../services/favorite_service.dart';
 import '../utils/event_bus_helper.dart';
 import '../utils/video_extractor.dart';
-import 'download_list_page.dart';
 import 'favorite_list_page.dart';
 
 class VideoInAppWebDetailPage extends StatefulWidget {
@@ -177,12 +176,31 @@ class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
 
   Future<void> _handleCollect() async {
     final favoriteService = Get.find<FavoriteService>();
-    final url = currentUrlNotifier.value;
-    bool added = await favoriteService.addFavorite(
-      Favorite(url: url, title: _pageTitle),
-    );
-    Get.snackbar('添加到收藏', added ? '已成功添加到收藏' : '该页面已在收藏列表中');
-    _checkIfFavorite(url);
+
+    // 获取当前网页的 URL
+    final currentUrl = (await _controller!.getUrl())?.toString();
+
+    if (currentUrl == null || currentUrl.isEmpty) {
+      Get.snackbar('收藏操作失败', '无法获取当前网页地址');
+      return;
+    }
+
+    // 判断当前 URL 是否已收藏
+    final bool isFavorite = await favoriteService.isFavorite(currentUrl);
+
+    bool success = false;
+    if (isFavorite) {
+      // 已收藏，则取消收藏
+      success = await favoriteService.removeFavoriteUrl(currentUrl);
+      Get.snackbar('取消收藏', success ? '已成功取消收藏' : '取消收藏失败');
+    } else {
+      // 未收藏，添加收藏
+      success = await favoriteService.addFavorite(
+        Favorite(url: currentUrl, title: _pageTitle),
+      );
+      Get.snackbar('添加到收藏', success ? '已成功添加到收藏' : '添加收藏失败');
+      _checkIfFavorite(currentUrl);
+    }
   }
 
   String? _filterTitle(String title) {
@@ -253,13 +271,12 @@ class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
                   curve: Curves.easeInOut,
                   child: AppBar(
                     title: Text(_pageTitle.isEmpty ? '' : _pageTitle),
-                    leading:
-                        RouteHelper.navigatorKey.currentState?.canPop() ?? false
-                            ? IconButton(
-                                icon: const Icon(Icons.arrow_back),
-                                onPressed: () => Get.back(),
-                              )
-                            : null,
+                    leading: ModalRoute.of(context)?.canPop ?? false
+                        ? IconButton(
+                            icon: const Icon(Icons.arrow_back),
+                            onPressed: () => Get.back(),
+                          )
+                        : null,
                     actions: [
                       IconButton(
                         icon: const Icon(Icons.refresh),
@@ -291,7 +308,12 @@ class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
                       _controller = controller;
                     },
                     onLoadStop: (controller, url) async {
-                      _updatePageTitle();
+                      // url 可能为 null，需要判断一下
+                      if (url != null) {
+                        final currentUrl = url.toString();
+                        // 更新 currentUrlNotifier
+                        currentUrlNotifier.value = currentUrl;
+                      }
                     },
                     onScrollChanged: (controller, x, y) {
                       //_onScrollChanged(y.toDouble());
