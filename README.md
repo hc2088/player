@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://www.jianshu.com/u/29f69849848a">
-    <img width="200" src="ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-60@3x.png">
+    <img width="200" src="ios/Runner/Assets.xcassets/AppIcon.appiconset/icon.png">
   </a>
 </p>
 

@@ -23,6 +23,15 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   @override
   void initState() {
     super.initState();
+    final args = Get.arguments;
+    if (args is! String) {
+      _checked = true;
+      _isFileExists = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Get.snackbar('错误', '无效的文件路径参数');
+      });
+      return;
+    }
 
     final path = Get.arguments as String;
     final file = File(path);

@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
-import 'package:player/main.dart';
 
 import '../config/app_config.dart';
 import '../config/event_names.dart';
@@ -40,19 +39,19 @@ class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
 
   StreamSubscription? _favoriteChangedSub;
   final HomePageController homeController = Get.find();
+  late final Worker _webReloadWorker;
 
   @override
   void initState() {
     super.initState();
     currentUrlNotifier = ValueNotifier(widget.defaultUrl);
 
-    currentUrlNotifier.addListener(() {
+    currentUrlNotifier.addListener(() async {
       final url = currentUrlNotifier.value;
-      _controller?.loadUrl(urlRequest: URLRequest(url: WebUri(url)));
-      _checkIfFavorite(url);
-      _updatePageTitle();
+      if (_controller != null) {
+        _controller!.loadUrl(urlRequest: URLRequest(url: WebUri(url)));
+      }
     });
-    _checkIfFavorite(currentUrlNotifier.value);
 
     _favoriteChangedSub = listenNamedEvent<FavoriteChangedEvent>(
       name: EventNames.favoriteChanged,
@@ -63,9 +62,11 @@ class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
     );
 
     // 监听双击事件
-    ever(homeController.webReloadEvent, (_) async {
+    _webReloadWorker = ever(homeController.webReloadEvent, (_) async {
       final url = await AppConfig.getDefaultVideoUrl();
-      currentUrlNotifier.value = url;
+      if (currentUrlNotifier.hasListeners && mounted) {
+        currentUrlNotifier.value = url;
+      }
     });
   }
 
@@ -73,7 +74,7 @@ class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     final args = Get.arguments;
-    if (args != null && args['url'] != null) {
+    if (args is Map && args['url'] != null) {
       final newUrl = args['url'] as String;
       if (newUrl != currentUrlNotifier.value) {
         currentUrlNotifier.value = newUrl;
@@ -83,6 +84,7 @@ class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
 
   @override
   void dispose() {
+    _webReloadWorker.dispose();
     currentUrlNotifier.dispose();
     _favoriteChangedSub?.cancel();
     super.dispose();
@@ -111,7 +113,6 @@ class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
 
   Future<void> _updatePageTitle() async {
     String? title = await _controller?.getTitle();
-    if (!mounted) return;
     setState(() {
       _pageTitle = title ?? '';
     });
@@ -179,10 +180,12 @@ class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
     await _controller?.reload();
   }
 
-  Future<void> _checkIfFavorite(String url) async {
-    final favoriteService = Get.find<FavoriteService>();
-    final isAdded = await favoriteService.isFavorite(url);
-    if (!mounted) return;
+  Future<void> _checkIfFavorite(String? url) async {
+    var isAdded = false;
+    if (url != null) {
+      final favoriteService = Get.find<FavoriteService>();
+      isAdded = await favoriteService.isFavorite(url);
+    }
     setState(() {
       isFavorite = isAdded;
     });
@@ -362,14 +365,15 @@ class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
                     ),
                     onWebViewCreated: (controller) {
                       _controller = controller;
+                      // 延迟获取 title，避免首次加载时 title 为 null
+                      Future.delayed(const Duration(milliseconds: 800), () {
+                        _updatePageTitle();
+                      });
                     },
                     onLoadStop: (controller, url) async {
-                      // url 可能为 null，需要判断一下
-                      if (url != null) {
-                        final currentUrl = url.toString();
-                        // 更新 currentUrlNotifier
-                        currentUrlNotifier.value = currentUrl;
-                      }
+                      // 更新标题（即使 URL 不变，也要更新 title）
+                      _checkIfFavorite(url?.toString());
+                      _updatePageTitle();
                     },
                     onScrollChanged: (controller, x, y) {
                       //_onScrollChanged(y.toDouble());
