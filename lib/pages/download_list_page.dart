@@ -71,13 +71,11 @@ class _DownloadListPageState extends State<DownloadListPage> {
                             borderRadius: BorderRadius.circular(8),
                             child: Container(
                               color: Colors.black, // 黑色背景
-                              width: double.infinity,
-                              height: 180,
                               child: (task.thumbnailPath != null &&
                                       File(task.thumbnailPath!).existsSync())
                                   ? Image.file(
                                       File(task.thumbnailPath!),
-                                      fit: BoxFit.fitHeight,
+                                      fit: BoxFit.contain,
                                     )
                                   : Container(
                                       color: Colors.grey[300],
@@ -93,7 +91,7 @@ class _DownloadListPageState extends State<DownloadListPage> {
                             task.fileName ?? task.url,
                             style: const TextStyle(
                                 fontSize: 16, fontWeight: FontWeight.bold),
-                            maxLines: 2,
+                            maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
                           const SizedBox(height: 4),
