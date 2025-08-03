@@ -1,3 +1,4 @@
+import 'package:blur/blur.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:path_provider/path_provider.dart';
@@ -66,16 +67,36 @@ class _DownloadListPageState extends State<DownloadListPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // 封面图
+                          // 封面图（毛玻璃背景 + contain 清晰图）
                           ClipRRect(
                             borderRadius: BorderRadius.circular(8),
-                            child: Container(
-                              color: Colors.black, // 黑色背景
+                            child: AspectRatio(
+                              aspectRatio: 16 / 9,
                               child: (task.thumbnailPath != null &&
                                       File(task.thumbnailPath!).existsSync())
-                                  ? Image.file(
-                                      File(task.thumbnailPath!),
-                                      fit: BoxFit.contain,
+                                  ? Stack(
+                                      fit: StackFit.expand,
+                                      children: [
+                                        // 毛玻璃背景图
+                                        Image.file(
+                                          File(task.thumbnailPath!),
+                                          fit: BoxFit.fitWidth,
+                                        ).blurred(
+                                          blur: 20,
+                                          blurColor: Colors.black26,
+                                          overlay:
+                                              Container(color: Colors.black26),
+                                        ),
+
+                                        // 上层清晰图
+                                        Center(
+                                          child: Image.file(
+                                            File(task.thumbnailPath!),
+                                            fit: BoxFit.contain,
+                                            width: double.infinity,
+                                          ),
+                                        ),
+                                      ],
                                     )
                                   : Container(
                                       color: Colors.grey[300],
