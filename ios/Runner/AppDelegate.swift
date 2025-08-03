@@ -33,8 +33,8 @@ import Flutter
             NSLayoutConstraint.activate([
                 launchImageView.centerXAnchor.constraint(equalTo: splashWindow.centerXAnchor),
                 launchImageView.centerYAnchor.constraint(equalTo: splashWindow.centerYAnchor),
-                launchImageView.widthAnchor.constraint(lessThanOrEqualTo: splashWindow.widthAnchor),
-                launchImageView.heightAnchor.constraint(lessThanOrEqualTo: splashWindow.heightAnchor)
+                launchImageView.widthAnchor.constraint(equalToConstant: 120),
+                launchImageView.heightAnchor.constraint(equalToConstant: 120)
             ])
         }
         
