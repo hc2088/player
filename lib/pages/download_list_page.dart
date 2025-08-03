@@ -74,29 +74,23 @@ class _DownloadListPageState extends State<DownloadListPage> {
                               aspectRatio: 16 / 9,
                               child: (task.thumbnailPath != null &&
                                       File(task.thumbnailPath!).existsSync())
-                                  ? Stack(
-                                      fit: StackFit.expand,
-                                      children: [
-                                        // 毛玻璃背景图
-                                        Image.file(
-                                          File(task.thumbnailPath!),
-                                          fit: BoxFit.fitWidth,
-                                        ).blurred(
-                                          blur: 20,
-                                          blurColor: Colors.black26,
-                                          overlay:
-                                              Container(color: Colors.black26),
-                                        ),
-
-                                        // 上层清晰图
-                                        Center(
+                                  ? // 毛玻璃背景图
+                                  Image.file(
+                                      File(task.thumbnailPath!),
+                                      fit: BoxFit.fitWidth,
+                                      width: double.maxFinite,
+                                    ).blurred(
+                                      blur: 20,
+                                      blurColor: Colors.black26,
+                                      overlay: Container(
+                                        child: Center(
                                           child: Image.file(
                                             File(task.thumbnailPath!),
                                             fit: BoxFit.contain,
                                             width: double.infinity,
                                           ),
                                         ),
-                                      ],
+                                      ),
                                     )
                                   : Container(
                                       color: Colors.grey[300],
