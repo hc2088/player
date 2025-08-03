@@ -41,6 +41,8 @@ class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
   final HomePageController homeController = Get.find();
   late final Worker _webReloadWorker;
 
+  bool _allowPop = true; // 初始值为 true，允许返回
+
   @override
   void initState() {
     super.initState();
@@ -113,6 +115,7 @@ class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
 
   Future<void> _updatePageTitle() async {
     String? title = await _controller?.getTitle();
+    print("_updatePageTitle=$title");
     setState(() {
       _pageTitle = title ?? '';
     });
@@ -229,14 +232,12 @@ class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
     }
   }
 
-  String _generateFileName(String? title, int index) {
+  String _generateFileName(String title, int index, String url) {
+    final safeTitle = title.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_'); // 清理非法字符
+    final shortHash = url.hashCode.toRadixString(16);
     final now = DateTime.now();
     final timeStr = DateFormat('yyyyMMddHHmmss').format(now);
-
-    final safeTitle =
-        (title != null && title.trim().isNotEmpty) ? title : timeStr;
-
-    return '${safeTitle}_$index';
+    return "$safeTitle-$shortHash-$timeStr-$index.mp4";
   }
 
   Future<void> _handleExtract() async {
@@ -255,6 +256,17 @@ class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
       return;
     }
 
+    String? pageTitle;
+    try {
+      pageTitle = await _controller!.getTitle();
+    } catch (_) {
+      pageTitle = _pageTitle; // fallback
+    }
+
+    pageTitle = (pageTitle != null && pageTitle.trim().isNotEmpty)
+        ? pageTitle.trim()
+        : "video_${DateTime.now().millisecondsSinceEpoch}";
+
     final executor = InAppWebViewScriptExecutor(_controller!);
     final urls = await VideoExtractor.extractVideoUrls(executor);
 
@@ -267,7 +279,7 @@ class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
         final existed = downloadService.tasks.any((task) => task.url == url);
 
         if (!existed) {
-          final uniqueFileName = _generateFileName(_pageTitle, index);
+          final uniqueFileName = _generateFileName(pageTitle, index, url);
           downloadService.addDownloadTask(
             url,
             currentUrl,
@@ -316,82 +328,105 @@ class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
     });
   }
 
+  Future<void> _updateCanPop() async {
+    if (_controller == null) return;
+
+    final canGoBack = await _controller!.canGoBack();
+    setState(() {
+      _allowPop = !canGoBack; // 如果 WebView 可以回退，则禁止侧滑返回
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        child: Stack(
-          children: [
-            Column(
-              children: [
-                AnimatedContainer(
-                  height: _showAppBar ? kToolbarHeight : 0,
-                  duration: const Duration(milliseconds: 300),
-                  curve: Curves.easeInOut,
-                  child: AppBar(
-                    title: Text(_pageTitle.isEmpty ? '' : _pageTitle),
-                    leading: ModalRoute.of(context)?.canPop ?? false
-                        ? IconButton(
-                            icon: const Icon(Icons.arrow_back),
-                            onPressed: () => Get.back(),
-                          )
-                        : null,
-                    actions: [
-                      IconButton(
-                        icon: const Icon(Icons.refresh),
-                        onPressed: _reload,
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.edit),
-                        onPressed: _showChangeUrlDialog,
-                        tooltip: '修改 URL',
-                      ),
-                      IconButton(
-                        icon: Icon(isFavorite
-                            ? Icons.favorite
-                            : Icons.favorite_border),
-                        onPressed: _handleCollect,
-                        tooltip: isFavorite ? '已收藏' : '添加到收藏',
-                      ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: InAppWebView(
-                    initialUrlRequest:
-                        URLRequest(url: WebUri(currentUrlNotifier.value)),
-                    initialSettings: InAppWebViewSettings(
-                      allowsBackForwardNavigationGestures: true,
+    return PopScope(
+      canPop: _allowPop,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+      },
+      child: Scaffold(
+        body: SafeArea(
+          child: Stack(
+            children: [
+              Column(
+                children: [
+                  AnimatedContainer(
+                    height: _showAppBar ? kToolbarHeight : 0,
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeInOut,
+                    child: AppBar(
+                      title: Text(_pageTitle.isEmpty ? '' : _pageTitle),
+                      leading: ModalRoute.of(context)?.canPop ?? false
+                          ? IconButton(
+                              icon: const Icon(Icons.arrow_back),
+                              onPressed: () => Get.back(),
+                            )
+                          : null,
+                      actions: [
+                        IconButton(
+                          icon: const Icon(Icons.refresh),
+                          onPressed: _reload,
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.edit),
+                          onPressed: _showChangeUrlDialog,
+                          tooltip: '修改 URL',
+                        ),
+                        IconButton(
+                          icon: Icon(isFavorite
+                              ? Icons.favorite
+                              : Icons.favorite_border),
+                          onPressed: _handleCollect,
+                          tooltip: isFavorite ? '已收藏' : '添加到收藏',
+                        ),
+                      ],
                     ),
-                    onWebViewCreated: (controller) {
-                      _controller = controller;
-                      // 延迟获取 title，避免首次加载时 title 为 null
-                      Future.delayed(const Duration(milliseconds: 800), () {
-                        _updatePageTitle();
-                      });
-                    },
-                    onLoadStop: (controller, url) async {
-                      // 更新标题（即使 URL 不变，也要更新 title）
-                      _checkIfFavorite(url?.toString());
-                      _updatePageTitle();
-                    },
-                    onScrollChanged: (controller, x, y) {
-                      //_onScrollChanged(y.toDouble());
-                    },
                   ),
-                ),
-              ],
-            ),
-            Positioned(
-              bottom: 16,
-              right: 16,
-              child: FloatingActionButton(
-                onPressed: _handleExtract,
-                child: const Icon(Icons.download),
-                tooltip: '提取视频',
+                  Expanded(
+                    child: InAppWebView(
+                      initialUrlRequest:
+                          URLRequest(url: WebUri(currentUrlNotifier.value)),
+                      initialSettings: InAppWebViewSettings(
+                        allowsBackForwardNavigationGestures: true,
+                      ),
+                      onWebViewCreated: (controller) {
+                        _controller = controller;
+                        _updateCanPop();
+                      },
+                      onLoadStop: (controller, url) async {
+                        // 更新标题（即使 URL 不变，也要更新 title）
+                        _checkIfFavorite(url?.toString());
+                        _updateCanPop();
+                        _updatePageTitle();
+                      },
+                      onUpdateVisitedHistory:
+                          (controller, url, androidIsReload) async {
+                        _checkIfFavorite(url.toString());
+                        // 延迟确保 controller 状态更新完成
+                        Future.delayed(const Duration(milliseconds: 300),
+                            () async {
+                          _updateCanPop();
+                          _updatePageTitle();
+                        });
+                      },
+                      onScrollChanged: (controller, x, y) {
+                        //_onScrollChanged(y.toDouble());
+                      },
+                    ),
+                  ),
+                ],
               ),
-            )
-          ],
+              Positioned(
+                bottom: 16,
+                right: 16,
+                child: FloatingActionButton(
+                  onPressed: _handleExtract,
+                  child: const Icon(Icons.download),
+                  tooltip: '提取视频',
+                ),
+              )
+            ],
+          ),
         ),
       ),
     );
