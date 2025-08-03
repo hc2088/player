@@ -16,6 +16,7 @@ class DownloadService extends GetxController {
   void onInit() {
     super.onInit();
     loadTasksFromStorage();
+    checkAndGenerateThumbnails(); // 只调用一次
   }
 
   void addDownloadTask(String url, String originPageUrl, {String? fileName}) {
@@ -36,7 +37,7 @@ class DownloadService extends GetxController {
     tasks.refresh();
     saveTasksToStorage();
 
-    await DownloadManager.download(task, (progress) {
+    await DownloadManager.download(task, (progress) async {
       if (progress < 0) {
         // 下载失败
         task.status = DownloadStatus.failed;
@@ -45,6 +46,18 @@ class DownloadService extends GetxController {
 
         if (progress >= 1.0 && task.status != DownloadStatus.completed) {
           task.status = DownloadStatus.completed;
+
+          // 下载完成后，异步生成封面
+          bool success = await DownloadManager.generateThumbnail(task);
+          if (success) {
+            print('封面生成成功: ${task.thumbnailPath}');
+          } else {
+            print('封面生成失败');
+          }
+
+          // 生成完封面后刷新和保存
+          tasks.refresh();
+          saveTasksToStorage();
         }
       }
 
@@ -65,6 +78,18 @@ class DownloadService extends GetxController {
         print('已删除本地文件: $path');
       } catch (e) {
         print('删除文件失败: $e');
+      }
+    }
+
+    if (task.thumbnailPath != null) {
+      final thumbFile = File(task.thumbnailPath!);
+      if (await thumbFile.exists()) {
+        try {
+          await thumbFile.delete();
+          print('已删除封面文件: ${task.thumbnailPath}');
+        } catch (e) {
+          print('删除封面文件失败: $e');
+        }
       }
     }
   }
@@ -116,5 +141,29 @@ class DownloadService extends GetxController {
   void saveTasksToStorage() {
     final jsonList = DownloadTask.toJsonList(tasks);
     box.write(storageKey, jsonList);
+  }
+
+  /// 异步批量补生成历史任务封面（启动时调用）
+  Future<void> checkAndGenerateThumbnails() async {
+    for (var task in tasks) {
+      if (task.status == DownloadStatus.completed) {
+        bool needGenerate = false;
+        if (task.thumbnailPath == null) {
+          needGenerate = true;
+        } else {
+          final file = File(task.thumbnailPath!);
+          if (!file.existsSync()) needGenerate = true;
+        }
+        if (needGenerate) {
+          print('补生成封面，任务: ${task.fileName}');
+          final success = await DownloadManager.generateThumbnail(task);
+          if (success) {
+            // 生成成功后刷新和存储
+            tasks.refresh();
+            saveTasksToStorage();
+          }
+        }
+      }
+    }
   }
 }

@@ -58,6 +58,28 @@ class DownloadManager {
     return safePath;
   }
 
+  static Future<String> getThumbnailPath(DownloadTask task) async {
+    final dir = await _getDownloadDir();
+    final baseName = (task.fileName ?? 'video').split('.').first;
+    return '$dir/thumb_${baseName}.jpg';
+  }
+
+  // 生成封面
+  static Future<bool> generateThumbnail(DownloadTask task) async {
+    final videoPath = await getFilePath(task);
+    final thumbPath = await getThumbnailPath(task);
+
+    final command = "-y -i '$videoPath' -ss 00:00:01 -vframes 1 '$thumbPath'";
+    final session = await FFmpegKit.execute(command);
+    final returnCode = await session.getReturnCode();
+
+    if (ReturnCode.isSuccess(returnCode)) {
+      task.thumbnailPath = thumbPath;
+      return true;
+    }
+    return false;
+  }
+
   static Future<void> download(
     DownloadTask task,
     Function(double) onProgress,

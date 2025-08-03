@@ -9,7 +9,7 @@ class DownloadTask {
 
   // 运行时使用，不参与序列化
   dynamic session; // FFmpegSession? 类型，可在运行中取消任务
-
+  String? thumbnailPath; // 新增封面路径
   DownloadTask({
     required this.url,
     required this.originPageUrl,
@@ -17,6 +17,7 @@ class DownloadTask {
     this.progress = 0.0,
     this.status = DownloadStatus.pending,
     this.session,
+    this.thumbnailPath,
   });
 
   factory DownloadTask.fromJson(Map<String, dynamic> json) {
@@ -26,6 +27,7 @@ class DownloadTask {
       fileName: json['fileName'],
       progress: (json['progress'] as num).toDouble(),
       status: DownloadStatus.values[json['status']],
+      thumbnailPath: json['thumbnailPath'],
     );
   }
 
@@ -36,6 +38,7 @@ class DownloadTask {
       'fileName': fileName,
       'progress': progress,
       'status': status.index,
+      'thumbnailPath': thumbnailPath,
     };
   }
 

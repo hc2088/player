@@ -36,12 +36,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     final path = Get.arguments as String;
     final file = File(path);
 
-    file.exists().then((exists) {
+    file.exists().then((exists) async {
       setState(() {
         _isFileExists = exists;
         _checked = true;
       });
-      _updateStatusBar(isDarkBackground: exists);
 
       if (!exists) {
         Get.snackbar('错误', '文件不存在：$path');
@@ -62,13 +61,19 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
             looping: false,
           );
         });
-        _updateStatusBar(isDarkBackground: true);
       });
     });
   }
 
+  bool get _isUserPoppingGesture {
+    return ModalRoute.of(context)?.navigator?.userGestureInProgress ?? false;
+  }
+
   void _videoPlayerListener() {
     if (!_videoPlayerController.value.isInitialized) return;
+
+    // 正在侧滑返回手势中，暂时不更新状态栏
+    if (_isUserPoppingGesture) return;
 
     // 例如：播放时保持黑底白字，暂停时可以调整
     if (_videoPlayerController.value.isPlaying) {
@@ -80,10 +85,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   }
 
   void _updateStatusBar({required bool isDarkBackground}) {
+    final brightness = isDarkBackground ? Brightness.light : Brightness.dark;
+
     SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
       statusBarColor: isDarkBackground ? Colors.black : Colors.white,
-      statusBarIconBrightness:
-          isDarkBackground ? Brightness.light : Brightness.dark,
+      statusBarIconBrightness: brightness,
       statusBarBrightness:
           isDarkBackground ? Brightness.dark : Brightness.light, // iOS
     ));
