@@ -2,8 +2,10 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
+import '../config/app_config.dart';
 import '../controllers/home_page_controller.dart';
 import '../routes/route_helper.dart';
+import 'video_inapp_web_detail_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -22,9 +24,15 @@ class _HomePageState extends State<HomePage> {
     super.initState();
 
     _pages = [
-      RouteHelper.routes
-          .firstWhere((element) => element.name == RouteHelper.videoWebDetail)
-          .page(),
+      FutureBuilder<String>(
+        future: AppConfig.getDefaultVideoUrl(),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          return VideoInAppWebDetailPage(defaultUrl: snapshot.data!);
+        },
+      ),
       RouteHelper.routes
           .firstWhere((element) => element.name == RouteHelper.downloadList)
           .page(),

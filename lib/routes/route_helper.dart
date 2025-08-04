@@ -31,16 +31,13 @@ class RouteHelper {
     GetPage(name: home, page: () => const HomePage()),
     GetPage(name: downloadList, page: () => const DownloadListPage()),
     GetPage(
-      name: videoWebDetail,
-      page: () => FutureBuilder<String>(
-        future: AppConfig.getDefaultVideoUrl(),
-        builder: (context, snapshot) {
-          if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          return VideoInAppWebDetailPage(defaultUrl: snapshot.data!);
-        },
-      ),
+      name: RouteHelper.videoWebDetail,
+      page: () {
+        final args = Get.arguments;
+        final url =
+            (args is Map && args['url'] != null) ? args['url'] as String : null;
+        return VideoInAppWebDetailPage(defaultUrl: url);
+      },
     ),
     GetPage(name: player, page: () => const VideoPlayerPage()),
     GetPage(name: favorite, page: () => const FavoriteListPage()),

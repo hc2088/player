@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'package:webview_flutter/webview_flutter.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
 abstract class ScriptExecutor {
@@ -15,18 +14,6 @@ class InAppWebViewScriptExecutor implements ScriptExecutor {
   Future<String?> evaluateJavascript(String js) async {
     final result = await controller.evaluateJavascript(source: js);
     return result?.toString();
-  }
-}
-
-class WebViewScriptExecutor implements ScriptExecutor {
-  final WebViewController controller;
-
-  WebViewScriptExecutor(this.controller);
-
-  @override
-  Future<String?> evaluateJavascript(String js) async {
-    final result = await controller.runJavaScriptReturningResult(js);
-    return result.toString();
   }
 }
 

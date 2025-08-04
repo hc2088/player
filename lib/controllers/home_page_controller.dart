@@ -16,7 +16,7 @@ class HomePageController extends GetxController {
       // 双击同一个tab
       if (index == 0) {
         // 发送刷新首页通知
-        refreshWebHome();
+        refreshWebHome(tips: "网页 Tab 被双击，已返回默认首页");
       }
     } else {
       currentTabIndex.value = index;
@@ -26,8 +26,10 @@ class HomePageController extends GetxController {
     _lastTapTime = now;
   }
 
-  void refreshWebHome() {
-    Get.snackbar('提示', '网页 Tab 被双击，已返回默认首页');
+  void refreshWebHome({String? tips}) {
+    if (tips?.isNotEmpty == true) {
+      Get.snackbar('提示', tips!);
+    }
     Get.find<HomePageController>().webReloadEvent.value = !webReloadEvent.value;
   }
 

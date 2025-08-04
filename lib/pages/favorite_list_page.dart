@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
-import '../models/favorite.dart';
+import '../config/app_config.dart';
+import '../config/event_names.dart';
+import '../controllers/home_page_controller.dart';
 import '../routes/route_helper.dart';
 import '../services/favorite_service.dart';
 import '../utils/event_bus_helper.dart';
@@ -21,14 +23,16 @@ class _FavoriteListPageState extends State<FavoriteListPage> {
   @override
   void initState() {
     super.initState();
-    _favoriteUpdateSubscription =
-        eventBus.on<FavoriteChangedEvent>().listen((event) {
-      final favoriteService = Get.find<FavoriteService>();
+    _favoriteUpdateSubscription = listenNamedEvent<FavoriteChangedEvent>(
+      name: EventNames.favoriteChanged,
+      onData: (event) {
+        final favoriteService = Get.find<FavoriteService>();
 
-      // 这里调用刷新方法，通常是刷新favorites列表
-      favoriteService.loadFavorites();
-      setState(() {}); // 触发UI刷新
-    });
+        // 这里调用刷新方法，通常是刷新favorites列表
+        favoriteService.loadFavorites();
+        setState(() {}); // 触发UI刷新
+      },
+    );
   }
 
   @override
@@ -62,9 +66,11 @@ class _FavoriteListPageState extends State<FavoriteListPage> {
                   Get.snackbar('收藏', '已删除');
                 },
               ),
-              onTap: () {
+              onTap: () async {
                 Get.toNamed(RouteHelper.videoWebDetail,
                     arguments: {'url': fav.url});
+                await AppConfig.setCustomHomePageUrl(fav.url);
+                Get.find<HomePageController>().refreshWebHome();
               },
             );
           },

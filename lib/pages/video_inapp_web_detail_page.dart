@@ -14,12 +14,11 @@ import '../services/download_service.dart';
 import '../services/favorite_service.dart';
 import '../utils/event_bus_helper.dart';
 import '../utils/video_extractor.dart';
-import 'favorite_list_page.dart';
 
 class VideoInAppWebDetailPage extends StatefulWidget {
-  final String defaultUrl;
+  final String? defaultUrl;
 
-  const VideoInAppWebDetailPage({super.key, required this.defaultUrl});
+  const VideoInAppWebDetailPage({super.key, this.defaultUrl});
 
   @override
   State<VideoInAppWebDetailPage> createState() =>
@@ -28,89 +27,47 @@ class VideoInAppWebDetailPage extends StatefulWidget {
 
 class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
   InAppWebViewController? _controller;
-  late final ValueNotifier<String> currentUrlNotifier;
+  String? url;
   String _pageTitle = '';
   bool _showAppBar = true;
   bool isFavorite = false;
-
-  double _lastScrollY = 0;
-  double _accumulatedScroll = 0;
-  final double _threshold = 30;
 
   StreamSubscription? _favoriteChangedSub;
   final HomePageController homeController = Get.find();
   late final Worker _webReloadWorker;
 
   bool _allowPop = true; // 初始值为 true，允许返回
+  double _progress = 0;
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    currentUrlNotifier = ValueNotifier(widget.defaultUrl);
-
-    currentUrlNotifier.addListener(() async {
-      final url = currentUrlNotifier.value;
-      if (_controller != null) {
-        _controller!.loadUrl(urlRequest: URLRequest(url: WebUri(url)));
-      }
-    });
+    url = widget.defaultUrl ?? '';
 
     _favoriteChangedSub = listenNamedEvent<FavoriteChangedEvent>(
       name: EventNames.favoriteChanged,
       onData: (event) {
         // 只会响应 name 为 'favorite' 的事件
-        _checkIfFavorite(currentUrlNotifier.value);
+        _checkIfFavorite(url);
       },
     );
 
     // 监听双击事件
     _webReloadWorker = ever(homeController.webReloadEvent, (_) async {
       final url = await AppConfig.getDefaultVideoUrl();
-      if (currentUrlNotifier.hasListeners && mounted) {
-        currentUrlNotifier.value = url;
+      if (_controller != null) {
+        _controller!.loadUrl(urlRequest: URLRequest(url: WebUri(url)));
       }
     });
   }
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final args = Get.arguments;
-    if (args is Map && args['url'] != null) {
-      final newUrl = args['url'] as String;
-      if (newUrl != currentUrlNotifier.value) {
-        currentUrlNotifier.value = newUrl;
-      }
-    }
-  }
-
-  @override
   void dispose() {
     _webReloadWorker.dispose();
-    currentUrlNotifier.dispose();
+    _controller?.dispose();
     _favoriteChangedSub?.cancel();
     super.dispose();
-  }
-
-  void _onScrollChanged(double scrollY) {
-    double delta = scrollY - _lastScrollY;
-    if (delta.abs() < 2) return;
-
-    _accumulatedScroll += delta;
-
-    if (_accumulatedScroll > _threshold && _showAppBar) {
-      setState(() {
-        _showAppBar = false;
-        _accumulatedScroll = 0;
-      });
-    } else if (_accumulatedScroll < -_threshold && !_showAppBar) {
-      setState(() {
-        _showAppBar = true;
-        _accumulatedScroll = 0;
-      });
-    }
-
-    _lastScrollY = scrollY;
   }
 
   Future<void> _updatePageTitle() async {
@@ -123,7 +80,7 @@ class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
 
   void _showChangeUrlDialog() {
     final TextEditingController urlController =
-        TextEditingController(text: currentUrlNotifier.value);
+        TextEditingController(text: url);
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -149,7 +106,10 @@ class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
             onPressed: () {
               final newUrl = urlController.text.trim();
               if (newUrl.isNotEmpty) {
-                currentUrlNotifier.value = newUrl;
+                if (_controller != null) {
+                  _controller!
+                      .loadUrl(urlRequest: URLRequest(url: WebUri(newUrl)));
+                }
               }
               AppConfig.setCustomHomePageUrl(newUrl);
               // 显示提示
@@ -161,22 +121,6 @@ class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
         ],
       ),
     );
-  }
-
-  Future<void> _goBack() async {
-    if (await _controller?.canGoBack() ?? false) {
-      await _controller?.goBack();
-      _updatePageTitle();
-    } else {
-      Get.back();
-    }
-  }
-
-  Future<void> _goForward() async {
-    if (await _controller?.canGoForward() ?? false) {
-      await _controller?.goForward();
-      _updatePageTitle();
-    }
   }
 
   Future<void> _reload() async {
@@ -248,7 +192,7 @@ class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
       return;
     }
 
-    // ✅ 获取当前网页的 URL
+    // 获取当前网页的 URL
     final currentUrl = (await _controller!.getUrl())?.toString();
 
     if (currentUrl == null || currentUrl.isEmpty) {
@@ -303,10 +247,6 @@ class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
     } else {
       Get.snackbar('视频链接提取', '未找到视频链接');
     }
-  }
-
-  void _handleGoToFavorites() {
-    Get.to(() => const FavoriteListPage());
   }
 
   void _backToHomeAndSwitchTab(int index) {
@@ -380,12 +320,21 @@ class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
                           tooltip: isFavorite ? '已收藏' : '添加到收藏',
                         ),
                       ],
+                      bottom: PreferredSize(
+                        preferredSize: const Size.fromHeight(3.0),
+                        child: Visibility(
+                          visible: _isLoading,
+                          maintainSize: true,
+                          maintainAnimation: true,
+                          maintainState: true,
+                          child: LinearProgressIndicator(value: _progress),
+                        ),
+                      ),
                     ),
                   ),
                   Expanded(
                     child: InAppWebView(
-                      initialUrlRequest:
-                          URLRequest(url: WebUri(currentUrlNotifier.value)),
+                      initialUrlRequest: URLRequest(url: WebUri(url ?? "")),
                       initialSettings: InAppWebViewSettings(
                         allowsBackForwardNavigationGestures: true,
                       ),
@@ -411,6 +360,21 @@ class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
                       },
                       onScrollChanged: (controller, x, y) {
                         //_onScrollChanged(y.toDouble());
+                      },
+                      onProgressChanged: (controller, progress) {
+                        setState(() {
+                          _progress = progress / 100;
+                          if (_progress == 1.0) {
+                            _isLoading = false; // 加载完成，隐藏进度条
+                          } else {
+                            _isLoading = true; // 继续显示进度条
+                          }
+                        });
+                      },
+                      onReceivedError: (controller, request, error) {
+                        setState(() {
+                          _isLoading = false; // 加载出错，隐藏进度条
+                        });
                       },
                     ),
                   ),
