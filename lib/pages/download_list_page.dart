@@ -1,12 +1,13 @@
+import 'dart:io';
+
 import 'package:blur/blur.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:get/get.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:player/routes/route_helper.dart';
-import 'dart:io';
 
 import '../models/download_task.dart';
 import '../services/download_service.dart';
+import '../routes/route_helper.dart';
 
 class DownloadListPage extends StatefulWidget {
   const DownloadListPage({super.key});
@@ -16,160 +17,169 @@ class DownloadListPage extends StatefulWidget {
 }
 
 class _DownloadListPageState extends State<DownloadListPage> {
-  Future<String> _getFullPath(String fileName) async {
-    final dir = await getApplicationDocumentsDirectory();
-    return '${dir.path}/$fileName';
-  }
+  final DownloadService _downloadService = Get.find<DownloadService>();
 
   @override
   Widget build(BuildContext context) {
-    final downloadService = Get.find<DownloadService>();
     return Scaffold(
-      resizeToAvoidBottomInset: false,
       appBar: AppBar(
         title: const Text('下载列表'),
         actions: [
           IconButton(
             icon: const Icon(Icons.favorite),
             tooltip: '收藏列表',
-            onPressed: () => RouteHelper.toUnique(RouteHelper.favorite),
+            onPressed: () => Get.toNamed(RouteHelper.favorite),
           ),
         ],
       ),
       body: Obx(() {
-        final tasks = downloadService.tasks;
+        final tasks = _downloadService.tasks;
         if (tasks.isEmpty) {
           return const Center(child: Text('暂无下载任务'));
         }
-        return ListView.builder(
-          padding: const EdgeInsets.only(bottom: 20),
+
+        return MasonryGridView.count(
+          crossAxisCount: 2,
+          // 两列布局
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
           itemCount: tasks.length,
+          padding: const EdgeInsets.all(8.0),
           itemBuilder: (context, index) {
             final task = tasks[index];
-            return FutureBuilder<String>(
-              future: _getFullPath(task.fileName ?? ''),
-              builder: (context, snapshot) {
-                final filePath = snapshot.data ?? '';
-                return Card(
-                  margin:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(8),
-                    onTap: () {
-                      Get.toNamed(RouteHelper.videoWebDetail, arguments: {
-                        'url': (task.originPageUrl.isNotEmpty)
-                            ? task.originPageUrl
-                            : task.url,
-                      });
-                    },
-                    child: Padding(
+            return Card(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(
+                  color: Colors.grey.withOpacity(0.1),
+                  width: 1, // 1 像素边框
+                ),
+              ),
+              clipBehavior: Clip.antiAlias,
+              elevation: 0, // 不要阴影
+              child: InkWell(
+                onTap: () => Get.toNamed(RouteHelper.videoSwiper,
+                    arguments: {'initialIndex': index}),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // 视频缩略图或占位
+                    AspectRatio(
+                      aspectRatio: 16 / 9,
+                      child: Container(
+                        color: Colors.grey[300],
+                        child: (task.thumbnailPath != null &&
+                                File(task.thumbnailPath!).existsSync())
+                            ? Image.file(
+                                File(task.thumbnailPath!),
+                                fit: BoxFit.cover,
+                              ).blurred(
+                                blur: 20,
+                                blurColor: Colors.black26,
+                                overlay: Container(
+                                  alignment: Alignment.center,
+                                  child: Image.file(
+                                    File(task.thumbnailPath!),
+                                    fit: BoxFit.contain,
+                                    width: double.infinity,
+                                  ),
+                                ),
+                              )
+                            : const Icon(
+                                Icons.videocam_off_outlined,
+                                size: 48,
+                                color: Colors.white54,
+                              ),
+                      ),
+                    ),
+                    // 文件名
+                    Padding(
                       padding: const EdgeInsets.all(8.0),
+                      child: Text(
+                        task.fileName ?? task.url,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+
+                    // 下载状态显示和进度条 + 百分比
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // 封面图（毛玻璃背景 + contain 清晰图）
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: AspectRatio(
-                              aspectRatio: 16 / 9,
-                              child: (task.thumbnailPath != null &&
-                                      File(task.thumbnailPath!).existsSync())
-                                  ? // 毛玻璃背景图
-                                  Image.file(
-                                      File(task.thumbnailPath!),
-                                      fit: BoxFit.fitWidth,
-                                      width: double.maxFinite,
-                                    ).blurred(
-                                      blur: 20,
-                                      blurColor: Colors.black26,
-                                      overlay: Container(
-                                        child: Center(
-                                          child: Image.file(
-                                            File(task.thumbnailPath!),
-                                            fit: BoxFit.contain,
-                                            width: double.infinity,
-                                          ),
-                                        ),
-                                      ),
-                                    )
-                                  : Container(
-                                      color: Colors.grey[300],
-                                      alignment: Alignment.center,
-                                      child: const Icon(Icons.videocam,
-                                          color: Colors.white54, size: 48),
-                                    ),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          // 标题
-                          Text(
-                            task.fileName ?? task.url,
-                            style: const TextStyle(
-                                fontSize: 16, fontWeight: FontWeight.bold),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 4),
-                          // 状态、进度
-                          Row(
-                            children: [
-                              Text('状态: ${task.status.name}'),
-                              if (task.status ==
-                                  DownloadStatus.downloading) ...[
-                                const SizedBox(width: 12),
-                                Text(
-                                  '下载进度：${(task.progress * 100).toStringAsFixed(1)}%',
-                                  style:
-                                      const TextStyle(color: Colors.blueAccent),
-                                ),
-                              ],
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          // 按钮区
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              if (task.status == DownloadStatus.downloading)
-                                Expanded(
-                                  child: Padding(
-                                    padding: const EdgeInsets.only(right: 8.0),
+                          Text('状态: ${task.status.name}'),
+                          if (task.status == DownloadStatus.downloading)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 8.0),
+                              child: Row(
+                                children: [
+                                  Expanded(
                                     child: LinearProgressIndicator(
-                                        value: task.progress),
+                                      value: task.progress,
+                                    ),
                                   ),
-                                ),
-                              if (task.status == DownloadStatus.completed)
-                                IconButton(
-                                  icon: const Icon(Icons.play_arrow),
-                                  onPressed: () async {
-                                    if (await File(filePath).exists()) {
-                                      Get.toNamed(RouteHelper.player,
-                                          arguments: filePath);
-                                    } else {
-                                      Get.snackbar('错误', '文件不存在');
-                                    }
-                                  },
-                                ),
-                              if (task.status != DownloadStatus.completed &&
-                                  task.status != DownloadStatus.downloading)
-                                IconButton(
-                                  icon: const Icon(Icons.refresh),
-                                  onPressed: () =>
-                                      downloadService.retryDownload(task),
-                                ),
-                              IconButton(
-                                icon: const Icon(Icons.delete),
-                                onPressed: () =>
-                                    downloadService.removeTask(task),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    '${(task.progress * 100).toStringAsFixed(1)}%',
+                                    style: const TextStyle(
+                                        color: Colors.blueAccent,
+                                        fontWeight: FontWeight.bold),
+                                  ),
+                                ],
                               ),
-                            ],
-                          )
+                            ),
                         ],
                       ),
                     ),
-                  ),
-                );
-              },
+
+                    const SizedBox(height: 4),
+
+                    // 底部按钮组
+                    OverflowBar(
+                      alignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        // 跳转原网页
+                        IconButton(
+                          tooltip: '打开原网页',
+                          icon: const Icon(Icons.language,
+                              color: Colors.blueAccent),
+                          onPressed: () {
+                            final url = task.originPageUrl.isNotEmpty
+                                ? task.originPageUrl
+                                : task.url;
+                            Get.toNamed(RouteHelper.videoWebDetail,
+                                arguments: {'url': url});
+                          },
+                        ),
+
+                        // 重新下载按钮
+                        if (task.status != DownloadStatus.completed &&
+                            task.status != DownloadStatus.downloading)
+                          IconButton(
+                            tooltip: '重新下载',
+                            icon:
+                                const Icon(Icons.refresh, color: Colors.orange),
+                            onPressed: () {
+                              _downloadService.retryDownload(task);
+                            },
+                          ),
+
+                        // 取消删除按钮
+                        IconButton(
+                          tooltip: '取消/删除任务',
+                          icon:
+                              const Icon(Icons.delete, color: Colors.redAccent),
+                          onPressed: () {
+                            _downloadService.removeTask(task);
+                          },
+                        ),
+                      ],
+                    )
+                  ],
+                ),
+              ),
             );
           },
         );

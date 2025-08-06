@@ -1,3 +1,5 @@
+import '../services/download_service.dart';
+
 enum DownloadStatus { pending, downloading, completed, failed, canceled }
 
 class DownloadTask {
@@ -6,10 +8,12 @@ class DownloadTask {
   String? fileName;
   double progress;
   DownloadStatus status;
+  String? thumbnailPath; // 新增封面路径
+  String? filePath; //本地绝对路径
 
   // 运行时使用，不参与序列化
   dynamic session; // FFmpegSession? 类型，可在运行中取消任务
-  String? thumbnailPath; // 新增封面路径
+
   DownloadTask({
     required this.url,
     required this.originPageUrl,
@@ -18,6 +22,7 @@ class DownloadTask {
     this.status = DownloadStatus.pending,
     this.session,
     this.thumbnailPath,
+    this.filePath,
   });
 
   factory DownloadTask.fromJson(Map<String, dynamic> json) {
@@ -28,6 +33,7 @@ class DownloadTask {
       progress: (json['progress'] as num).toDouble(),
       status: DownloadStatus.values[json['status']],
       thumbnailPath: json['thumbnailPath'],
+      filePath: json['filePath'],
     );
   }
 
@@ -39,6 +45,7 @@ class DownloadTask {
       'progress': progress,
       'status': status.index,
       'thumbnailPath': thumbnailPath,
+      'filePath': filePath,
     };
   }
 

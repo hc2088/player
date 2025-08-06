@@ -6,6 +6,7 @@ import 'package:ffmpeg_kit_flutter_new/ffprobe_kit.dart';
 import 'package:ffmpeg_kit_flutter_new/return_code.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as p;
 import '../models/download_task.dart';
 
 class DownloadManager {
@@ -14,6 +15,22 @@ class DownloadManager {
   static Future<String> _getDownloadDir() async {
     final dir = await getApplicationDocumentsDirectory();
     return dir.path;
+  }
+
+  static Future<void> fixDownloadTaskPaths(List<DownloadTask> tasks) async {
+    final newDir = await _getDownloadDir();
+
+    for (final task in tasks) {
+      if (task.filePath != null) {
+        final oldFileName = p.basename(task.filePath!);
+        task.filePath = p.join(newDir, oldFileName);
+      }
+
+      if (task.thumbnailPath != null) {
+        final oldThumbName = p.basename(task.thumbnailPath!);
+        task.thumbnailPath = p.join(newDir, oldThumbName);
+      }
+    }
   }
 
   static Future<double?> _getDuration(String url) async {
@@ -54,7 +71,7 @@ class DownloadManager {
 
     // ✅ 转为平台安全路径，防止中文/特殊字符报错
     final safePath = Uri.file(rawPath).toFilePath(windows: Platform.isWindows);
-
+    task.filePath = safePath;
     return safePath;
   }
 
@@ -66,7 +83,7 @@ class DownloadManager {
 
   // 生成封面
   static Future<bool> generateThumbnail(DownloadTask task) async {
-    final videoPath = await getFilePath(task);
+    final videoPath = task.filePath;
     final thumbPath = await getThumbnailPath(task);
 
     final command = "-y -i '$videoPath' -ss 00:00:01 -vframes 1 '$thumbPath'";
@@ -87,7 +104,7 @@ class DownloadManager {
     // 获取视频总时长
     final duration = await _getDuration(task.url);
 
-    final filePath = await getFilePath(task);
+    final filePath = task.filePath;
     final command = "-y -i '${task.url}' -c copy '$filePath'";
 
     // 关键点：先启动 async 会返回 Future<FFmpegSession>

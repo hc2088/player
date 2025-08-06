@@ -17,15 +17,17 @@ import '../utils/video_extractor.dart';
 
 class VideoInAppWebDetailPage extends StatefulWidget {
   final String? defaultUrl;
+  final VoidCallback? onOpenDrawer;
 
-  const VideoInAppWebDetailPage({super.key, this.defaultUrl});
+  const VideoInAppWebDetailPage(
+      {super.key, this.defaultUrl, this.onOpenDrawer});
 
   @override
   State<VideoInAppWebDetailPage> createState() =>
-      _VideoInAppWebDetailPageState();
+      VideoInAppWebDetailPageState();
 }
 
-class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
+class VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
   InAppWebViewController? _controller;
   String? url;
   String _pageTitle = '';
@@ -40,9 +42,38 @@ class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
   double _progress = 0;
   bool _isLoading = true;
 
+  // 拖动按钮的位置状态
+  Offset _fabOffset = Offset.zero;
+  late Offset _dragOffsetFromOrigin;
+
+  Future<void> reloadWebViewWithUrl(String newUrl) async {
+    if (_controller != null && newUrl.isNotEmpty) {
+      setState(() {
+        url = newUrl;
+        _isLoading = true;
+        _progress = 0;
+      });
+      await _controller!.loadUrl(urlRequest: URLRequest(url: WebUri(newUrl)));
+    }
+  }
+
   @override
   void initState() {
     super.initState();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final screenSize = MediaQuery.of(context).size;
+      final safeBottom = MediaQuery.of(context).padding.bottom;
+
+      // 初始化位置为右下角，距离右边16，底部距离TabBar（56）+安全区域
+      setState(() {
+        _fabOffset = Offset(
+          screenSize.width - 56 - 16,
+          screenSize.height - 56 - safeBottom - 16 - 156, // 56 是 TabBar 高度
+        );
+      });
+    });
+
     url = widget.defaultUrl ?? '';
 
     _favoriteChangedSub = listenNamedEvent<FavoriteChangedEvent>(
@@ -60,6 +91,12 @@ class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
         _controller!.loadUrl(urlRequest: URLRequest(url: WebUri(url)));
       }
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    // TODO: implement didChangeDependencies
+    super.didChangeDependencies();
   }
 
   @override
@@ -271,10 +308,50 @@ class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
   Future<void> _updateCanPop() async {
     if (_controller == null) return;
 
-    final canGoBack = await _controller!.canGoBack();
+    final canGoBack1 = await canGoBack();
     setState(() {
-      _allowPop = !canGoBack; // 如果 WebView 可以回退，则禁止侧滑返回
+      _allowPop = !canGoBack1; // 如果 WebView 可以回退，则禁止侧滑返回
     });
+  }
+
+  Future<bool> canGoBack() async {
+    if (_controller == null) return false;
+    return await _controller?.canGoBack() ?? false; // 或者你已有 controller
+  }
+
+  Widget _buildDraggableFab() {
+    final screenSize = MediaQuery.of(context).size;
+    final safeBottom = MediaQuery.of(context).padding.bottom;
+
+    return Positioned(
+      left: _fabOffset.dx,
+      top: _fabOffset.dy,
+      child: Listener(
+        onPointerDown: (event) {
+          // 记录点击时与 FAB 左上角的偏移，用于拖拽后修正落点
+          _dragOffsetFromOrigin = event.localPosition;
+        },
+        child: Draggable(
+          feedback: _buildFab(),
+          childWhenDragging: Opacity(opacity: 0.5, child: _buildFab()),
+          onDragEnd: (details) {
+            final renderBox = context.findRenderObject() as RenderBox;
+            final offset = renderBox.globalToLocal(details.offset);
+
+            // 修正落点，让 FAB 中心落在鼠标点
+            double newX = (offset.dx - _dragOffsetFromOrigin.dx)
+                .clamp(0.0, screenSize.width - 56);
+            double newY = (offset.dy - _dragOffsetFromOrigin.dy)
+                .clamp(0.0, screenSize.height - 56 - safeBottom - 156);
+
+            setState(() {
+              _fabOffset = Offset(newX, newY);
+            });
+          },
+          child: _buildFab(),
+        ),
+      ),
+    );
   }
 
   @override
@@ -296,12 +373,17 @@ class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
                     curve: Curves.easeInOut,
                     child: AppBar(
                       title: Text(_pageTitle.isEmpty ? '' : _pageTitle),
-                      leading: ModalRoute.of(context)?.canPop ?? false
+                      leading: widget.onOpenDrawer != null
                           ? IconButton(
-                              icon: const Icon(Icons.arrow_back),
-                              onPressed: () => Get.back(),
+                              icon: const Icon(Icons.menu),
+                              onPressed: widget.onOpenDrawer,
                             )
-                          : null,
+                          : (ModalRoute.of(context)?.canPop ?? false
+                              ? IconButton(
+                                  icon: const Icon(Icons.arrow_back),
+                                  onPressed: () => Get.back(),
+                                )
+                              : null),
                       actions: [
                         IconButton(
                           icon: const Icon(Icons.refresh),
@@ -380,19 +462,29 @@ class _VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
                   ),
                 ],
               ),
-              Positioned(
-                bottom: 16,
-                right: 16,
-                child: FloatingActionButton(
-                  onPressed: _handleExtract,
-                  child: const Icon(Icons.download),
-                  tooltip: '提取视频',
-                ),
-              )
+              // Positioned(
+              //   bottom: 16,
+              //   right: 16,
+              //   child: FloatingActionButton(
+              //     onPressed: _handleExtract,
+              //     child: const Icon(Icons.download),
+              //     tooltip: '提取视频',
+              //   ),
+              // )
+              // 在 build 方法中替换原来的 Positioned
+              _buildDraggableFab(),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildFab() {
+    return FloatingActionButton(
+      onPressed: _handleExtract,
+      child: const Icon(Icons.download),
+      tooltip: '提取视频',
     );
   }
 }

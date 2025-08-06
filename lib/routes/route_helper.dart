@@ -7,6 +7,7 @@ import '../pages/favorite_list_page.dart';
 import '../pages/home_page.dart';
 import '../pages/video_inapp_web_detail_page.dart';
 import '../pages/video_player_page.dart';
+import '../pages/video_swiper_page.dart';
 
 // 跳转到web页面，保留/home页面，避免重复web页面
 // RouteHelper.toUnique('/web', arguments: {'url': fav.url}, untilRouteNames: ['/home']);
@@ -26,6 +27,7 @@ class RouteHelper {
   static const String player = '/player';
   static const String favorite = '/favorite';
   static const String home = '/';
+  static const String videoSwiper = '/video-swiper';
 
   static List<GetPage> routes = [
     GetPage(name: home, page: () => const HomePage()),
@@ -41,6 +43,7 @@ class RouteHelper {
     ),
     GetPage(name: player, page: () => const VideoPlayerPage()),
     GetPage(name: favorite, page: () => const FavoriteListPage()),
+    GetPage(name: videoSwiper, page: () => const VideoSwiperPage()),
   ];
   static final navigatorKey = GlobalKey<NavigatorState>();
 

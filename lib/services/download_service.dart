@@ -13,13 +13,14 @@ class DownloadService extends GetxController {
   var tasks = <DownloadTask>[].obs;
 
   @override
-  void onInit() {
+  void onInit() async {
     super.onInit();
-    loadTasksFromStorage();
+    await loadTasksFromStorage();
     checkAndGenerateThumbnails(); // 只调用一次
   }
 
-  void addDownloadTask(String url, String originPageUrl, {String? fileName}) {
+  Future<void> addDownloadTask(String url, String originPageUrl,
+      {String? fileName}) async {
     if (tasks.any((task) => task.url == url)) {
       print('任务已存在: $url');
       return;
@@ -27,9 +28,18 @@ class DownloadService extends GetxController {
 
     final task = DownloadTask(
         url: url, fileName: fileName, originPageUrl: originPageUrl);
+
+    // 异步赋值路径
+    await assignPaths(task);
+
     tasks.add(task);
     saveTasksToStorage();
     _startDownload(task);
+  }
+
+  static Future<void> assignPaths(DownloadTask task) async {
+    final filePath = await DownloadManager.getFilePath(task);
+    task.filePath = filePath;
   }
 
   void _startDownload(DownloadTask task) async {
@@ -54,10 +64,6 @@ class DownloadService extends GetxController {
           } else {
             print('封面生成失败');
           }
-
-          // 生成完封面后刷新和保存
-          tasks.refresh();
-          saveTasksToStorage();
         }
       }
 
@@ -69,13 +75,30 @@ class DownloadService extends GetxController {
     saveTasksToStorage();
   }
 
+  /// 取消某个任务下载
+  void cancelDownload(DownloadTask task) {
+    if (task.status != DownloadStatus.downloading) return;
+
+    DownloadManager.cancel(task);
+
+    // 标记为取消状态
+    task.status = DownloadStatus.canceled;
+    task.progress = 0.0;
+
+    // 删除文件和封面（可选）
+    _deleteFile(task);
+
+    tasks.refresh();
+    saveTasksToStorage();
+  }
+
   Future<void> _deleteFile(DownloadTask task) async {
-    final path = await DownloadManager.getFilePath(task);
-    final file = File(path);
+    if (task.filePath == null) return;
+    final file = File(task.filePath!);
     if (await file.exists()) {
       try {
         await file.delete();
-        print('已删除本地文件: $path');
+        print('已删除本地文件: ${task.filePath}');
       } catch (e) {
         print('删除文件失败: $e');
       }
@@ -122,11 +145,13 @@ class DownloadService extends GetxController {
     _startDownload(task);
   }
 
-  void loadTasksFromStorage() {
+  Future<void> loadTasksFromStorage() async {
     final stored = box.read(storageKey);
     if (stored != null) {
       final List<dynamic> jsonList = stored;
       final loaded = DownloadTask.fromJsonList(jsonList);
+      // 修复路径
+      await DownloadManager.fixDownloadTaskPaths(loaded);
       // 设置未完成任务为失败
       for (var task in loaded) {
         if (task.status != DownloadStatus.completed) {
