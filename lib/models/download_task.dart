@@ -1,3 +1,5 @@
+import 'package:get/get.dart';
+
 import '../services/download_service.dart';
 
 enum DownloadStatus { pending, downloading, completed, failed, canceled }
@@ -7,7 +9,13 @@ class DownloadTask {
   String originPageUrl;
   String? fileName;
   double progress;
-  DownloadStatus status;
+
+  Rx<DownloadStatus> statusRx;
+
+  DownloadStatus get status => statusRx.value;
+
+  set status(DownloadStatus value) => statusRx.value = value;
+
   String? thumbnailPath; // 新增封面路径
   String? filePath; //本地绝对路径
 
@@ -17,13 +25,13 @@ class DownloadTask {
   DownloadTask({
     required this.url,
     required this.originPageUrl,
+    required DownloadStatus status,
     this.fileName,
     this.progress = 0.0,
-    this.status = DownloadStatus.pending,
     this.session,
     this.thumbnailPath,
     this.filePath,
-  });
+  }) : statusRx = status.obs;
 
   factory DownloadTask.fromJson(Map<String, dynamic> json) {
     return DownloadTask(

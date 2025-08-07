@@ -27,7 +27,7 @@ class DownloadService extends GetxController {
     }
 
     final task = DownloadTask(
-        url: url, fileName: fileName, originPageUrl: originPageUrl);
+        url: url, fileName: fileName, originPageUrl: originPageUrl,status: DownloadStatus.pending);
 
     // 异步赋值路径
     await assignPaths(task);
@@ -68,11 +68,11 @@ class DownloadService extends GetxController {
       }
 
       tasks.refresh();
-      saveTasksToStorage();
+      await saveTasksToStorage();
     });
 
     tasks.refresh();
-    saveTasksToStorage();
+    await saveTasksToStorage();
   }
 
   /// 取消某个任务下载
@@ -163,9 +163,9 @@ class DownloadService extends GetxController {
     tasks.refresh();
   }
 
-  void saveTasksToStorage() {
+  Future<void> saveTasksToStorage() async {
     final jsonList = DownloadTask.toJsonList(tasks);
-    box.write(storageKey, jsonList);
+    await box.write(storageKey, jsonList);
   }
 
   /// 异步批量补生成历史任务封面（启动时调用）

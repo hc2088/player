@@ -64,33 +64,33 @@ class _DownloadListPageState extends State<DownloadListPage> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     // 视频缩略图或占位
-                    Container(
-                      color: Colors.grey[300],
-                      child: (task.thumbnailPath != null &&
-                              File(task.thumbnailPath!).existsSync())
-                          ? Image.file(
-                              File(task.thumbnailPath!),
-                              fit: BoxFit.cover,
-                            ).blurred(
-                              blur: 20,
-                              blurColor: Colors.black26,
-                              overlay: Container(
-                                alignment: Alignment.center,
-                                child: Image.file(
-                                  File(task.thumbnailPath!),
-                                  fit: BoxFit.contain,
-                                  width: double.infinity,
+                    AspectRatio(
+                      aspectRatio: 16 / 9,
+                      child: Container(
+                        color: Colors.grey[300],
+                        child: (task.thumbnailPath != null &&
+                                File(task.thumbnailPath!).existsSync())
+                            ? Image.file(
+                                File(task.thumbnailPath!),
+                                fit: BoxFit.cover,
+                              ).blurred(
+                                blur: 20,
+                                blurColor: Colors.black26,
+                                overlay: Container(
+                                  alignment: Alignment.center,
+                                  child: Image.file(
+                                    File(task.thumbnailPath!),
+                                    fit: BoxFit.contain,
+                                    width: double.infinity,
+                                  ),
                                 ),
-                              ),
-                            )
-                          : AspectRatio(
-                              aspectRatio: 16 / 9,
-                              child: const Icon(
+                              )
+                            : const Icon(
                                 Icons.videocam_off_outlined,
                                 size: 48,
                                 color: Colors.white54,
                               ),
-                            ),
+                      ),
                     ),
                     // 文件名
                     Padding(
@@ -109,7 +109,9 @@ class _DownloadListPageState extends State<DownloadListPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('状态: ${task.status.name}'),
+                          Visibility(
+                              visible: task.status != DownloadStatus.completed,
+                              child: Text('状态: ${task.status.name}')),
                           if (task.status == DownloadStatus.downloading)
                             Padding(
                               padding: const EdgeInsets.only(top: 8.0),

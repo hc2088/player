@@ -160,7 +160,13 @@ class VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
           ),
           TextButton(
             onPressed: () {
-              final newUrl = urlController.text.trim();
+              var newUrl = urlController.text.trim();
+              // 如果没有以 http/https 开头，默认加上 https://
+              if (newUrl.isNotEmpty &&
+                  !newUrl.toLowerCase().startsWith('http://') &&
+                  !newUrl.toLowerCase().startsWith('https://')) {
+                newUrl = 'https://$newUrl';
+              }
               if (newUrl.isNotEmpty) {
                 if (_controller != null) {
                   _controller!

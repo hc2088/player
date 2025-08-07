@@ -47,7 +47,7 @@ class DownloadManager {
     return DateFormat('yyyyMMddHHmmss').format(dt);
   }
 
-  // ✅ 公用方法：根据任务获取文件路径
+  // 公用方法：根据任务获取文件路径
   static Future<String> getFilePath(DownloadTask task) async {
     final dir = await _getDownloadDir();
     final now = DateTime.now();
@@ -56,20 +56,30 @@ class DownloadManager {
     // 初步获取文件名
     String fileName = (task.fileName?.trim().isNotEmpty ?? false)
         ? task.fileName!.trim()
-        : 'video_$formattedTime.mp4';
+        : 'video_$formattedTime';
 
-    // ✅ 强制添加后缀（避免有中文但没有.mp4 的情况）
-    if (!fileName.toLowerCase().endsWith('.mp4')) {
-      fileName += '.mp4';
+    // 清除可能的扩展名，准备自己添加
+    fileName = fileName.replaceAll(RegExp(r'\.mp4$', caseSensitive: false), '');
+
+    // 限制总长度为 50，包括后缀（".mp4" 为 4 个字符）
+    const maxLength = 50;
+    const suffix = '.mp4';
+    const maxNameLength = maxLength - suffix.length;
+
+    if (fileName.length > maxNameLength) {
+      fileName = fileName.substring(0, maxNameLength);
     }
+
+    // 添加后缀
+    fileName += suffix;
 
     // 赋值回 task
     task.fileName = fileName;
 
-    // 组合完整路径
+    // 拼接完整路径
     final rawPath = '$dir/$fileName';
 
-    // ✅ 转为平台安全路径，防止中文/特殊字符报错
+    // 平台安全路径
     final safePath = Uri.file(rawPath).toFilePath(windows: Platform.isWindows);
     task.filePath = safePath;
     return safePath;

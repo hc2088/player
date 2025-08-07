@@ -25,6 +25,8 @@ class _VideoSwiperPageState extends State<VideoSwiperPage>
   final Map<int, VideoPlayerController> _videoControllerMap = {};
   final Map<int, ChewieController> _chewieControllerMap = {};
 
+  final Map<int, Worker> _statusWatchers = {};
+
   @override
   void initState() {
     super.initState();
@@ -45,6 +47,11 @@ class _VideoSwiperPageState extends State<VideoSwiperPage>
     WidgetsBinding.instance.removeObserver(this);
     _disposeAllControllers();
     _pageController.dispose();
+    // 清除 Rx 监听器
+    for (var worker in _statusWatchers.values) {
+      worker.dispose();
+    }
+    _statusWatchers.clear();
     super.dispose();
   }
 
@@ -68,11 +75,23 @@ class _VideoSwiperPageState extends State<VideoSwiperPage>
 
     final task = _downloadService.tasks[index];
 
+    // 如果未完成，监听其变化，等完成后再初始化
     if (task.status != DownloadStatus.completed) {
-      // 未完成不初始化播放器
+      if (!_statusWatchers.containsKey(index)) {
+        _statusWatchers[index] = ever(task.statusRx, (status) async {
+          // 页面已被释放，不再响应
+          if (!mounted) return;
+
+          if (status == DownloadStatus.completed) {
+            await _initControllerAt(index); // 会自动跳过重复初始化
+            if (mounted) setState(() {});
+          }
+        });
+      }
       return null;
     }
 
+    // 如果已经是完成状态，正常初始化 controller
     final filePath = task.filePath;
     if (filePath == null || filePath.isEmpty) return null;
 
@@ -95,18 +114,33 @@ class _VideoSwiperPageState extends State<VideoSwiperPage>
     _videoControllerMap[index] = videoController;
     _chewieControllerMap[index] = chewieController;
 
-    setState(() {});
-
     return videoController;
   }
 
   Future<void> _initControllersAround(int index) async {
-    List<Future<VideoPlayerController?>> futures = [];
+    final tasks = _downloadService.tasks;
+
+    // 初始化当前页、前一页、后一页
     for (int i = index - 1; i <= index + 1; i++) {
-      futures.add(_initControllerAt(i));
+      if (i >= 0 && i < tasks.length) {
+        await _initControllerAt(i);
+      }
     }
 
-    await Future.wait(futures);
+    // 移除其他页面 controller（仅保留最多 3 个）
+    final keepIndexes = [index - 1, index, index + 1];
+    final toRemove = _videoControllerMap.keys
+        .where((k) => !keepIndexes.contains(k))
+        .toList();
+
+    for (final i in toRemove) {
+      _videoControllerMap[i]?.removeListener(_videoPlayerListener);
+      _videoControllerMap[i]?.dispose();
+      _chewieControllerMap[i]?.dispose();
+
+      _videoControllerMap.remove(i);
+      _chewieControllerMap.remove(i);
+    }
 
     _playOnly(index);
 
@@ -229,6 +263,11 @@ class _VideoSwiperPageState extends State<VideoSwiperPage>
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
+                      Text(
+                        '状态：${task.fileName}',
+                        style:
+                            const TextStyle(color: Colors.white, fontSize: 20),
+                      ),
                       Text(
                         '状态：${task.status.name}',
                         style:
