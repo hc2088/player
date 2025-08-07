@@ -24,13 +24,13 @@ class _DownloadListPageState extends State<DownloadListPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('下载列表'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.favorite),
-            tooltip: '收藏列表',
-            onPressed: () => Get.toNamed(RouteHelper.favorite),
-          ),
-        ],
+        // actions: [
+        //   IconButton(
+        //     icon: const Icon(Icons.favorite),
+        //     tooltip: '收藏列表',
+        //     onPressed: () => Get.toNamed(RouteHelper.favorite),
+        //   ),
+        // ],
       ),
       body: Obx(() {
         final tasks = _downloadService.tasks;
@@ -64,33 +64,33 @@ class _DownloadListPageState extends State<DownloadListPage> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     // 视频缩略图或占位
-                    AspectRatio(
-                      aspectRatio: 16 / 9,
-                      child: Container(
-                        color: Colors.grey[300],
-                        child: (task.thumbnailPath != null &&
-                                File(task.thumbnailPath!).existsSync())
-                            ? Image.file(
-                                File(task.thumbnailPath!),
-                                fit: BoxFit.cover,
-                              ).blurred(
-                                blur: 20,
-                                blurColor: Colors.black26,
-                                overlay: Container(
-                                  alignment: Alignment.center,
-                                  child: Image.file(
-                                    File(task.thumbnailPath!),
-                                    fit: BoxFit.contain,
-                                    width: double.infinity,
-                                  ),
+                    Container(
+                      color: Colors.grey[300],
+                      child: (task.thumbnailPath != null &&
+                              File(task.thumbnailPath!).existsSync())
+                          ? Image.file(
+                              File(task.thumbnailPath!),
+                              fit: BoxFit.cover,
+                            ).blurred(
+                              blur: 20,
+                              blurColor: Colors.black26,
+                              overlay: Container(
+                                alignment: Alignment.center,
+                                child: Image.file(
+                                  File(task.thumbnailPath!),
+                                  fit: BoxFit.contain,
+                                  width: double.infinity,
                                 ),
-                              )
-                            : const Icon(
+                              ),
+                            )
+                          : AspectRatio(
+                              aspectRatio: 16 / 9,
+                              child: const Icon(
                                 Icons.videocam_off_outlined,
                                 size: 48,
                                 color: Colors.white54,
                               ),
-                      ),
+                            ),
                     ),
                     // 文件名
                     Padding(

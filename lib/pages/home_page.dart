@@ -34,12 +34,35 @@ class _HomePageState extends State<HomePage> {
 
     // 初始化当前 URL
     _initUrlFuture = _initCurrentUrl();
+
+    ever(controller.canGoBack, (bool value) {
+      if (controller.currentTabIndex.value == 0) {
+        setState(() {
+          _enableDrawerGesture = !value;
+        });
+      } else {
+        setState(() {
+          _enableDrawerGesture = true;
+        });
+      }
+    });
+
+    ever(controller.currentTabIndex, (int value) {
+      if (controller.currentTabIndex.value == 0) {
+        setState(() {
+          _enableDrawerGesture = !controller.canGoBack.value;
+        });
+      } else {
+        setState(() {
+          _enableDrawerGesture = true;
+        });
+      }
+    });
   }
 
   Future<void> _initCurrentUrl() async {
     _currentUrl = await AppConfig.getDefaultVideoUrl();
     _initPages();
-    setState(() {});
   }
 
   void _initPages() {
@@ -67,7 +90,7 @@ class _HomePageState extends State<HomePage> {
     // 更新当前URL，刷新WebView
     setState(() {
       _currentUrl = url;
-      _initPages();
+      Get.find<HomePageController>().switchToTab(0);
     });
 
     await AppConfig.setCustomHomePageUrl(url);
@@ -75,24 +98,6 @@ class _HomePageState extends State<HomePage> {
     final state = _videoPageKey.currentState;
     if (state != null) {
       state.reloadWebViewWithUrl(url);
-    }
-  }
-
-  void _updateDrawerGesture() async {
-    if (controller.currentTabIndex.value == 0) {
-      // Web 页
-      final state = _videoPageKey.currentState;
-      if (state != null) {
-        final canGoBack = await state.canGoBack();
-        setState(() {
-          _enableDrawerGesture = !canGoBack;
-        });
-      }
-    } else {
-      // 下载页，允许侧滑
-      setState(() {
-        _enableDrawerGesture = true;
-      });
     }
   }
 
@@ -109,10 +114,6 @@ class _HomePageState extends State<HomePage> {
         }
 
         return Obx(() {
-          // 每次 tab 切换都触发手势更新
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            _updateDrawerGesture();
-          });
           return Scaffold(
             key: _scaffoldKey,
             drawerEnableOpenDragGesture: _enableDrawerGesture,

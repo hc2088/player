@@ -3,6 +3,11 @@ import 'package:get/get.dart';
 class HomePageController extends GetxController {
   var currentTabIndex = 0.obs;
 
+  // 用RxBool做事件开关
+  var webReloadEvent = false.obs;
+
+  var canGoBack = true.obs;
+
   // 保存上次点击时间和索引
   int? _lastTapIndex;
   DateTime? _lastTapTime;
@@ -32,7 +37,4 @@ class HomePageController extends GetxController {
     }
     Get.find<HomePageController>().webReloadEvent.value = !webReloadEvent.value;
   }
-
-  // 用RxBool做事件开关
-  var webReloadEvent = false.obs;
 }
