@@ -264,7 +264,7 @@ class _VideoSwiperPageState extends State<VideoSwiperPage>
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(
-                        '状态：${task.fileName}',
+                        '${task.fileName}',
                         style:
                             const TextStyle(color: Colors.white, fontSize: 20),
                       ),

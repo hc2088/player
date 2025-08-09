@@ -113,36 +113,40 @@ class _HomePageState extends State<HomePage> {
           );
         }
 
-        return Obx(() {
-          return Scaffold(
-            key: _scaffoldKey,
-            drawerEnableOpenDragGesture: _enableDrawerGesture,
-            // 动态控制侧滑手势
-            drawer: SizedBox(
-              width: 200,
-              child: Drawer(
-                child: FavoriteListPage(
-                  selectedUrl: _currentUrl,
-                  onItemTap: _onFavoriteItemTap,
-                  isDrawerMode: true,
-                ),
-              ),
-            ),
-            body: IndexedStack(
-              index: controller.currentTabIndex.value,
-              children: _pages,
-            ),
-            bottomNavigationBar: BottomNavigationBar(
-              currentIndex: controller.currentTabIndex.value,
-              onTap: controller.switchToTab,
-              items: const [
-                BottomNavigationBarItem(icon: Icon(Icons.web), label: '网页'),
-                BottomNavigationBarItem(
-                    icon: Icon(Icons.download), label: '下载'),
-              ],
-            ),
-          );
-        });
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final drawerWidth = constraints.maxWidth * 2 / 3;
+            return Obx(() => Scaffold(
+                  key: _scaffoldKey,
+                  drawerEnableOpenDragGesture: _enableDrawerGesture,
+                  // 动态控制侧滑手势
+                  drawer: SizedBox(
+                    width: drawerWidth,
+                    child: Drawer(
+                      child: FavoriteListPage(
+                        selectedUrl: _currentUrl,
+                        onItemTap: _onFavoriteItemTap,
+                        isDrawerMode: true,
+                      ),
+                    ),
+                  ),
+                  body: IndexedStack(
+                    index: controller.currentTabIndex.value,
+                    children: _pages,
+                  ),
+                  bottomNavigationBar: BottomNavigationBar(
+                    currentIndex: controller.currentTabIndex.value,
+                    onTap: controller.switchToTab,
+                    items: const [
+                      BottomNavigationBarItem(
+                          icon: Icon(Icons.web), label: '网页'),
+                      BottomNavigationBarItem(
+                          icon: Icon(Icons.download), label: '下载'),
+                    ],
+                  ),
+                ));
+          },
+        );
       },
     );
   }

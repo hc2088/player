@@ -111,22 +111,24 @@ class DownloadManager {
     DownloadTask task,
     Function(double) onProgress,
   ) async {
-    // 获取视频总时长
     final duration = await _getDuration(task.url);
+    print('[Download] 获取视频时长: $duration 秒');
 
     final filePath = task.filePath;
     final command = "-y -i '${task.url}' -c copy '$filePath'";
+    print('[Download] 执行命令: $command');
 
-    // 关键点：先启动 async 会返回 Future<FFmpegSession>
     final sessionFuture = FFmpegKit.executeAsync(
       command,
       (session) async {
         final returnCode = await session.getReturnCode();
-        // 下载完成或失败后，清理 session
         _activeSessions.remove(task.url);
+
         if (ReturnCode.isSuccess(returnCode)) {
+          print('[Download] FFmpeg 成功: $filePath');
           onProgress(1.0);
         } else {
+          print('[Download] FFmpeg 失败，code=$returnCode');
           onProgress(-1.0);
         }
       },
@@ -135,14 +137,15 @@ class DownloadManager {
         final time = statistics.getTime();
         if (duration != null && duration > 0) {
           final progress = (time / (duration * 1000)).clamp(0.0, 1.0);
+          print('[Download] 实时进度: ${(progress * 100).toStringAsFixed(2)}%');
           onProgress(progress);
         }
       },
     );
 
-    // 等 session 创建完毕后，保存引用
     final session = await sessionFuture;
     _activeSessions[task.url] = session;
+    print('[Download] FFmpeg session 存储完成');
   }
 
   static Future<void> cancel(DownloadTask task) async {

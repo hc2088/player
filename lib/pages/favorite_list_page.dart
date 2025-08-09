@@ -7,6 +7,7 @@ import 'package:player/utils/string_ext.dart';
 import '../config/app_config.dart';
 import '../config/event_names.dart';
 import '../controllers/home_page_controller.dart';
+import '../models/favorite.dart';
 import '../routes/route_helper.dart';
 import '../services/favorite_service.dart';
 import '../utils/event_bus_helper.dart';
@@ -77,7 +78,7 @@ class _FavoriteListPageState extends State<FavoriteListPage> {
               // 选中背景色
               title: widget.isDrawerMode
                   ? Text(
-                      fav.title.breakWord,
+                      "${index + 1}、${fav.title.breakWord}",
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -119,6 +120,9 @@ class _FavoriteListPageState extends State<FavoriteListPage> {
                   Get.find<HomePageController>().refreshWebHome();
                 }
               },
+              onLongPress: () {
+                _showConfirmUnfavorite(fav);
+              },
             );
 
             if (widget.isDrawerMode) {
@@ -138,5 +142,61 @@ class _FavoriteListPageState extends State<FavoriteListPage> {
         );
       }),
     );
+  }
+
+  void _showConfirmUnfavorite(Favorite fav) {
+    final favoriteService = Get.find<FavoriteService>();
+    showModalBottomSheet(
+        context: context,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(
+            top: Radius.circular(16),
+          ),
+        ),
+        builder: (BuildContext context) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '确认取消收藏',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () {
+                          Navigator.of(context).pop(); // 关闭弹窗
+                        },
+                        child: Text('取消'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          // 这里写确定逻辑，例如取消收藏
+                          print('已取消收藏');
+                          Navigator.of(context).pop(); // 关闭弹窗
+                          favoriteService.removeFavorite(fav);
+                          Get.snackbar('收藏', '已删除');
+                          if (_selectedUrl == fav.url) {
+                            setState(() {
+                              _selectedUrl = null; // 删除时取消选中
+                            });
+                          }
+                        },
+                        child: Text('确定'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          );
+        });
   }
 }

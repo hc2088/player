@@ -27,13 +27,16 @@ class DownloadService extends GetxController {
     }
 
     final task = DownloadTask(
-        url: url, fileName: fileName, originPageUrl: originPageUrl,status: DownloadStatus.pending);
+        url: url,
+        fileName: fileName,
+        originPageUrl: originPageUrl,
+        status: DownloadStatus.pending);
 
     // 异步赋值路径
     await assignPaths(task);
 
     tasks.add(task);
-    saveTasksToStorage();
+    await saveTasksToStorage();
     _startDownload(task);
   }
 
@@ -44,35 +47,38 @@ class DownloadService extends GetxController {
 
   void _startDownload(DownloadTask task) async {
     task.status = DownloadStatus.downloading;
+    print('[Download] 开始下载: ${task.url}');
     tasks.refresh();
-    saveTasksToStorage();
+    await saveTasksToStorage();
 
     await DownloadManager.download(task, (progress) async {
+      print(
+          '[Download] 进度回调: ${(progress * 100).toStringAsFixed(2)}%, status=${task.status}');
+
       if (progress < 0) {
-        // 下载失败
         task.status = DownloadStatus.failed;
+        print('[Download] 下载失败: ${task.url}');
       } else {
         task.progress = progress;
 
         if (progress >= 1.0 && task.status != DownloadStatus.completed) {
+          print('[Download] 进度达到100%，准备设置为 completed');
           task.status = DownloadStatus.completed;
 
-          // 下载完成后，异步生成封面
+          print('[Download] 开始生成封面...');
           bool success = await DownloadManager.generateThumbnail(task);
           if (success) {
-            print('封面生成成功: ${task.thumbnailPath}');
+            print('[Download] 封面生成成功: ${task.thumbnailPath}');
           } else {
-            print('封面生成失败');
+            print('[Download] 封面生成失败');
           }
         }
       }
 
       tasks.refresh();
+      print('[Download] 保存任务状态...');
       await saveTasksToStorage();
     });
-
-    tasks.refresh();
-    await saveTasksToStorage();
   }
 
   /// 取消某个任务下载
