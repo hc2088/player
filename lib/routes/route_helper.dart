@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:player/pages/video_swiper_dismiss_page.dart';
 
 import '../config/app_config.dart';
 import '../pages/download_list_page.dart';
@@ -43,7 +44,10 @@ class RouteHelper {
     ),
     GetPage(name: player, page: () => const VideoPlayerPage()),
     GetPage(name: favorite, page: () => const FavoriteListPage()),
-    GetPage(name: videoSwiper, page: () => const VideoSwiperPage()),
+    GetPage(
+        name: videoSwiper,
+        page: () => const VideoSwiperDismissPage(),
+        popGesture: true),
   ];
   static final navigatorKey = GlobalKey<NavigatorState>();
 
