@@ -65,7 +65,7 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/wakelock_plus/ios"
 
 SPEC CHECKSUMS:
-  ffmpeg_kit_flutter_new: bb5699950aa0a22b9f7a05ebdf8390cfc72e77f4
+  ffmpeg_kit_flutter_new: 57e1119b327bb2e13a091e0d73576739fb9f22f5
   Flutter: e0871f40cf51350855a761d2e70bf5af5b9b5de7
   flutter_inappwebview_ios: 6f63631e2c62a7c350263b13fa5427aedefe81d4
   OrderedSet: e539b66b644ff081c73a262d24ad552a69be3a94
@@ -78,4 +78,4 @@ SPEC CHECKSUMS:
 
 PODFILE CHECKSUM: 4172ddb5f34b17af707065b5cbf9b6b9f9cf5f0f
 
-COCOAPODS: 1.15.2
+COCOAPODS: 1.16.2
