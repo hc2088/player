@@ -50,3 +50,5 @@ app.*.map.json
 
 
 xcshareddata
+build_output
+android/.kotlin

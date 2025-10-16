@@ -11,6 +11,7 @@ dependencies:
     sdk: flutter
   path_provider: ^2.0.14
   ffmpeg_kit_flutter_new: any
+#  ffmpeg_kit_flutter: 6.0.3-LTS
   get: ^4.6.6
   chewie: ^1.5.0
   video_player: ^2.7.0

@@ -17,6 +17,7 @@ android {
             storePassword = "iosball_player!"
             keyAlias = "iosball_player"
             keyPassword = "iosball_player!"
+            enableV1Signing = true
             enableV2Signing = true
         }
     }
@@ -36,7 +37,7 @@ android {
         applicationId = "com.huchu.iosball.player"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        minSdk = 24
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
