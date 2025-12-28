@@ -36,9 +36,26 @@ target 'Runner' do
 end
 
 post_install do |installer|
- 
-
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
+    
+    target.build_configurations.each do |config|
+      # 修复 ffmpeg_kit 在模拟器上的架构问题
+      # 只对 ffmpeg_kit 相关 target 排除 arm64（因为框架的 arm64 是为设备构建的）
+      # 其他 target 和 Runner 项目允许使用 arm64 模拟器（支持 iPhone 17）
+      target_name_lower = target.name.downcase
+      if target_name_lower.include?('ffmpeg')
+        # 在模拟器上排除 arm64 架构
+        config.build_settings['EXCLUDED_ARCHS[sdk=iphonesimulator*]'] = 'arm64'
+        config.build_settings['ONLY_ACTIVE_ARCH'] = 'NO'
+        # 允许链接不匹配的架构（Xcode 26 需要）
+        config.build_settings['VALIDATE_WORKSPACE'] = 'NO'
+      end
+    end
+  end
+  
+  # 为整个 Pods 项目设置验证（不排除架构，让应用可以使用 arm64 模拟器）
+  installer.pods_project.build_configurations.each do |config|
+    config.build_settings['VALIDATE_WORKSPACE'] = 'NO'
   end
 end

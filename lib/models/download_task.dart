@@ -1,7 +1,5 @@
 import 'package:get/get.dart';
 
-import '../services/download_service.dart';
-
 enum DownloadStatus { pending, downloading, completed, failed, canceled }
 
 class DownloadTask {

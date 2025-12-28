@@ -4,8 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
-import 'package:player/utils/screen_info.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:player/widgets/floating_ball.dart';
 
 import '../config/app_config.dart';
 import '../config/event_names.dart';
@@ -45,13 +44,6 @@ class VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
   double _progress = 0;
   bool _isLoading = true;
 
-  // 拖动按钮的位置状态
-  Offset _fabOffset = Offset.zero;
-  late Offset _dragOffsetFromOrigin;
-  static const _fabOffsetXKey = 'fabOffsetX';
-  static const _fabOffsetYKey = 'fabOffsetY';
-  bool _fabReady = false;
-
   Future<void> reloadWebViewWithUrl(String newUrl) async {
     if (_controller != null && newUrl.isNotEmpty) {
       setState(() {
@@ -84,32 +76,7 @@ class VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
       reloadWebViewWithUrl(url);
     });
 
-    _initFabOffset();
-  }
-
-  Future<void> _initFabOffset() async {
-    final prefs = await SharedPreferences.getInstance();
-    final dx = prefs.getDouble(_fabOffsetXKey);
-    final dy = prefs.getDouble(_fabOffsetYKey);
-
-    Offset saved = Offset(dx ?? 0, dy ?? 0);
-    if (saved == Offset.zero) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        final defaultOffset = Offset(
-          context.screenInfo.width - 56 - 16,
-          context.screenInfo.usableHeight - 56 - 16,
-        );
-        setState(() {
-          _fabOffset = defaultOffset;
-          _fabReady = true;
-        });
-      });
-    } else {
-      setState(() {
-        _fabOffset = saved;
-        _fabReady = true;
-      });
-    }
+    // _initFabOffset();
   }
 
   @override
@@ -406,82 +373,55 @@ class VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
                     ),
                   ),
                   Expanded(
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        final maxWidth = constraints.maxWidth;
-                        final maxHeight = constraints.maxHeight;
-                        return Stack(
-                          children: [
-                            InAppWebView(
-                              key: _webViewKey,
-                              initialUrlRequest:
-                                  URLRequest(url: WebUri(url ?? "")),
-                              initialSettings: InAppWebViewSettings(
-                                allowsBackForwardNavigationGestures: true,
-                              ),
-                              onWebViewCreated: (controller) {
-                                _controller = controller;
-                                _updateCanPop();
-                              },
-                              onLoadStop: (controller, url) async {
-                                // 更新标题（即使 URL 不变，也要更新 title）
-                                _checkIfFavorite(url?.toString());
-                                _updateCanPop();
-                                _updatePageTitle();
-                              },
-                              onUpdateVisitedHistory:
-                                  (controller, url, androidIsReload) async {
-                                _checkIfFavorite(url.toString());
-                                // 延迟确保 controller 状态更新完成
-                                Future.delayed(
-                                    const Duration(milliseconds: 300),
-                                    () async {
-                                  _updateCanPop();
-                                  _updatePageTitle();
-                                });
-                              },
-                              onScrollChanged: (controller, x, y) {
-                                //_onScrollChanged(y.toDouble());
-                              },
-                              onProgressChanged: (controller, progress) {
-                                setState(() {
-                                  _progress = progress / 100;
-                                  if (_progress == 1.0) {
-                                    _isLoading = false; // 加载完成，隐藏进度条
-                                  } else {
-                                    _isLoading = true; // 继续显示进度条
-                                  }
-                                });
-                              },
-                              onReceivedError: (controller, request, error) {
-                                setState(() {
-                                  _isLoading = false; // 加载出错，隐藏进度条
-                                });
-                              },
-                            ),
-                            Visibility(
-                              visible: _fabReady,
-                              child: Positioned(
-                                left: _fabOffset.dx,
-                                top: _fabOffset.dy,
-                                child: Listener(
-                                  onPointerDown: (event) {
-                                    _dragOffsetFromOrigin = event.localPosition;
-                                  },
-                                  child: Draggable(
-                                    feedback: _buildFab(),
-                                    childWhenDragging: const SizedBox.shrink(),
-                                    onDragEnd: _onDragEnd,
-                                    child: _buildFab(),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        );
-                      },
-                    ),
-                  ),
+                      child: Stack(
+                    children: [
+                      InAppWebView(
+                        key: _webViewKey,
+                        initialUrlRequest: URLRequest(url: WebUri(url ?? "")),
+                        initialSettings: InAppWebViewSettings(
+                          allowsBackForwardNavigationGestures: true,
+                        ),
+                        onWebViewCreated: (controller) {
+                          _controller = controller;
+                          _updateCanPop();
+                        },
+                        onLoadStop: (controller, url) async {
+                          // 更新标题（即使 URL 不变，也要更新 title）
+                          _checkIfFavorite(url?.toString());
+                          _updateCanPop();
+                          _updatePageTitle();
+                        },
+                        onUpdateVisitedHistory:
+                            (controller, url, androidIsReload) async {
+                          _checkIfFavorite(url.toString());
+                          // 延迟确保 controller 状态更新完成
+                          Future.delayed(const Duration(milliseconds: 300),
+                              () async {
+                            _updateCanPop();
+                            _updatePageTitle();
+                          });
+                        },
+                        onProgressChanged: (controller, progress) {
+                          setState(() {
+                            _progress = progress / 100;
+                            if (_progress == 1.0) {
+                              _isLoading = false; // 加载完成，隐藏进度条
+                            } else {
+                              _isLoading = true; // 继续显示进度条
+                            }
+                          });
+                        },
+                        onReceivedError: (controller, request, error) {
+                          setState(() {
+                            _isLoading = false; // 加载出错，隐藏进度条
+                          });
+                        },
+                      ),
+                      FloatingBall(
+                        child: _buildFab(),
+                      ),
+                    ],
+                  )),
                 ],
               ),
             ],
@@ -491,46 +431,7 @@ class VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
     );
   }
 
-  Future<void> _saveFabOffset(Offset offset) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble(_fabOffsetXKey, offset.dx);
-    await prefs.setDouble(_fabOffsetYKey, offset.dy);
-  }
-
-// 拖拽结束回调里，调用保存方法
-  void _onDragEnd(DraggableDetails details) {
-    final renderBox = context.findRenderObject() as RenderBox;
-    final localOffset = renderBox.globalToLocal(details.offset);
-    final maxWidth = renderBox.size.width;
-    final fabWidth = 56.0;
-    final fabHeight = 56.0;
-    const margin = 16.0;
-
-    // 安全高度
-    final screenHeight = context.screenInfo.usableHeight;
-
-    double dx = localOffset.dx - _dragOffsetFromOrigin.dx;
-    double dy = localOffset.dy - _dragOffsetFromOrigin.dy;
-
-    // 上下边界约束
-    dy = dy.clamp(margin, screenHeight - fabHeight - margin);
-
-    // 左右吸附
-    if (dx < maxWidth / 2) {
-      dx = margin;
-    } else {
-      dx = maxWidth - fabWidth - margin;
-    }
-
-    final newOffset = Offset(dx, dy);
-
-    setState(() {
-      _fabOffset = newOffset;
-    });
-
-    _saveFabOffset(newOffset);
-  }
-
+  // 构建浮标
   Widget _buildFab() {
     return FloatingActionButton(
       onPressed: _handleExtract,
