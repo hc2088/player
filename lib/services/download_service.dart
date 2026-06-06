@@ -19,9 +19,13 @@ class DownloadService extends GetxController {
     checkAndGenerateThumbnails(); // 只调用一次
   }
 
-  Future<void> addDownloadTask(String url, String originPageUrl,
-      {String? fileName}) async {
-    if (tasks.any((task) => task.url == url)) {
+  Future<void> addDownloadTask(
+    String url,
+    String originPageUrl, {
+    String? fileName,
+    DownloadMediaType mediaType = DownloadMediaType.video,
+  }) async {
+    if (tasks.any((task) => task.url == url && task.mediaType == mediaType)) {
       print('任务已存在: $url');
       return;
     }
@@ -29,6 +33,7 @@ class DownloadService extends GetxController {
     final task = DownloadTask(
         url: url,
         fileName: fileName,
+        mediaType: mediaType,
         originPageUrl: originPageUrl,
         status: DownloadStatus.pending);
 
@@ -65,12 +70,14 @@ class DownloadService extends GetxController {
           print('[Download] 进度达到100%，准备设置为 completed');
           task.status = DownloadStatus.completed;
 
-          print('[Download] 开始生成封面...');
-          bool success = await DownloadManager.generateThumbnail(task);
-          if (success) {
-            print('[Download] 封面生成成功: ${task.thumbnailPath}');
-          } else {
-            print('[Download] 封面生成失败');
+          if (task.mediaType == DownloadMediaType.video) {
+            print('[Download] 开始生成封面...');
+            bool success = await DownloadManager.generateThumbnail(task);
+            if (success) {
+              print('[Download] 封面生成成功: ${task.thumbnailPath}');
+            } else {
+              print('[Download] 封面生成失败');
+            }
           }
         }
       }
@@ -178,6 +185,8 @@ class DownloadService extends GetxController {
   Future<void> checkAndGenerateThumbnails() async {
     for (var task in tasks) {
       if (task.status == DownloadStatus.completed) {
+        if (task.mediaType != DownloadMediaType.video) continue;
+
         bool needGenerate = false;
         if (task.thumbnailPath == null) {
           needGenerate = true;

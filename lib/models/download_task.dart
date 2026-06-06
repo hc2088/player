@@ -2,10 +2,13 @@ import 'package:get/get.dart';
 
 enum DownloadStatus { pending, downloading, completed, failed, canceled }
 
+enum DownloadMediaType { video, audio }
+
 class DownloadTask {
   String url;
   String originPageUrl;
   String? fileName;
+  DownloadMediaType mediaType;
   double progress;
 
   Rx<DownloadStatus> statusRx;
@@ -24,6 +27,7 @@ class DownloadTask {
     required this.url,
     required this.originPageUrl,
     required DownloadStatus status,
+    this.mediaType = DownloadMediaType.video,
     this.fileName,
     this.progress = 0.0,
     this.session,
@@ -32,12 +36,18 @@ class DownloadTask {
   }) : statusRx = status.obs;
 
   factory DownloadTask.fromJson(Map<String, dynamic> json) {
+    final mediaTypeIndex = json['mediaType'];
     return DownloadTask(
       url: json['url'] ?? "",
       originPageUrl: json['originPageUrl'] ?? "",
       fileName: json['fileName'],
       progress: (json['progress'] as num).toDouble(),
       status: DownloadStatus.values[json['status']],
+      mediaType: mediaTypeIndex is int &&
+              mediaTypeIndex >= 0 &&
+              mediaTypeIndex < DownloadMediaType.values.length
+          ? DownloadMediaType.values[mediaTypeIndex]
+          : DownloadMediaType.video,
       thumbnailPath: json['thumbnailPath'],
       filePath: json['filePath'],
     );
@@ -48,6 +58,7 @@ class DownloadTask {
       'url': url,
       'originPageUrl': originPageUrl,
       'fileName': fileName,
+      'mediaType': mediaType.index,
       'progress': progress,
       'status': status.index,
       'thumbnailPath': thumbnailPath,

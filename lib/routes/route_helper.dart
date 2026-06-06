@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 import '../pages/download_list_page.dart';
 import '../pages/favorite_list_page.dart';
 import '../pages/home_page.dart';
+import '../pages/local_image_viewer_page.dart';
 import '../pages/video_inapp_web_detail_page.dart';
 import '../pages/video_player_page.dart';
 import '../pages/video_swiper_page.dart';
@@ -27,6 +28,7 @@ class RouteHelper {
   static const String favorite = '/favorite';
   static const String home = '/';
   static const String videoSwiper = '/video-swiper';
+  static const String localImageViewer = '/local-image-viewer';
 
   static List<GetPage> routes = [
     GetPage(name: home, page: () => const HomePage()),
@@ -43,6 +45,7 @@ class RouteHelper {
     GetPage(name: player, page: () => const VideoPlayerPage()),
     GetPage(name: favorite, page: () => const FavoriteListPage()),
     GetPage(name: videoSwiper, page: () => const VideoSwiperPage()),
+    GetPage(name: localImageViewer, page: () => const LocalImageViewerPage()),
   ];
   static final navigatorKey = GlobalKey<NavigatorState>();
 

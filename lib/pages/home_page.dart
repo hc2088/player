@@ -5,7 +5,10 @@ import 'package:get/get.dart';
 import '../config/app_config.dart';
 import '../controllers/home_page_controller.dart';
 import '../routes/route_helper.dart';
+import '../services/local_media_service.dart';
+import '../widgets/password_input_dialog.dart';
 import 'favorite_list_page.dart';
+import 'local_media_list_page.dart';
 import 'video_inapp_web_detail_page.dart';
 
 class HomePage extends StatefulWidget {
@@ -27,6 +30,11 @@ class _HomePageState extends State<HomePage> {
   late Future<void> _initUrlFuture;
 
   late List<Widget> _pages;
+  bool _localEntryVisible = false;
+  String? _localUnlockPassword;
+  int _hiddenTapCount = 0;
+  DateTime? _lastHiddenTapAt;
+  bool _unlockDialogShowing = false;
 
   @override
   void initState() {
@@ -81,6 +89,11 @@ class _HomePageState extends State<HomePage> {
       RouteHelper.routes
           .firstWhere((element) => element.name == RouteHelper.downloadList)
           .page(),
+      if (_localEntryVisible)
+        LocalMediaListPage(
+          initialPassword: _localUnlockPassword,
+          onHideEntry: _hideLocalEntry,
+        ),
     ];
   }
 
@@ -101,6 +114,83 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  void _handleNavigationTap(int index) {
+    if (index == 1) {
+      _recordHiddenTap();
+    }
+
+    controller.switchToTab(index);
+  }
+
+  void _recordHiddenTap() {
+    final now = DateTime.now();
+    if (_lastHiddenTapAt == null ||
+        now.difference(_lastHiddenTapAt!) > const Duration(seconds: 4)) {
+      _hiddenTapCount = 0;
+    }
+
+    _lastHiddenTapAt = now;
+    _hiddenTapCount++;
+
+    if (_hiddenTapCount >= 10) {
+      _hiddenTapCount = 0;
+      if (_localEntryVisible) {
+        _hideLocalEntry();
+      } else {
+        _showUnlockDialog();
+      }
+    }
+  }
+
+  void _hideLocalEntry() {
+    setState(() {
+      _localEntryVisible = false;
+      _localUnlockPassword = null;
+      _hiddenTapCount = 0;
+      _lastHiddenTapAt = null;
+      _initPages();
+    });
+
+    controller.switchToTab(1);
+    _showMessage('本地入口已隐藏');
+  }
+
+  Future<void> _showUnlockDialog() async {
+    if (_unlockDialogShowing || _localEntryVisible) return;
+
+    _unlockDialogShowing = true;
+    final password = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const PasswordInputDialog(title: '访问验证'),
+    );
+    _unlockDialogShowing = false;
+
+    if (password == null || !mounted) return;
+
+    if (!LocalMediaService.isUnlockPassword(password)) {
+      _showMessage('密码有误');
+      return;
+    }
+
+    setState(() {
+      _localEntryVisible = true;
+      _localUnlockPassword = LocalMediaService.normalizePassword(password);
+      _initPages();
+    });
+
+    _showMessage('本地入口已显示');
+  }
+
+  void _showMessage(String message) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder(
@@ -116,35 +206,45 @@ class _HomePageState extends State<HomePage> {
         return LayoutBuilder(
           builder: (context, constraints) {
             final drawerWidth = constraints.maxWidth * 2 / 3;
-            return Obx(() => Scaffold(
-                  key: _scaffoldKey,
-                  drawerEnableOpenDragGesture: _enableDrawerGesture,
-                  // 动态控制侧滑手势
-                  drawer: SizedBox(
-                    width: drawerWidth,
-                    child: Drawer(
-                      child: FavoriteListPage(
-                        selectedUrl: _currentUrl,
-                        onItemTap: _onFavoriteItemTap,
-                        isDrawerMode: true,
-                      ),
+            return Obx(() {
+              final currentIndex = controller.currentTabIndex.value;
+              final safeIndex =
+                  currentIndex >= _pages.length ? 0 : currentIndex;
+              final navigationItems = [
+                const BottomNavigationBarItem(
+                    icon: Icon(Icons.web), label: '网页'),
+                const BottomNavigationBarItem(
+                    icon: Icon(Icons.download), label: '下载'),
+                if (_localEntryVisible)
+                  const BottomNavigationBarItem(
+                      icon: Icon(Icons.folder), label: '本地'),
+              ];
+
+              return Scaffold(
+                key: _scaffoldKey,
+                drawerEnableOpenDragGesture: _enableDrawerGesture,
+                // 动态控制侧滑手势
+                drawer: SizedBox(
+                  width: drawerWidth,
+                  child: Drawer(
+                    child: FavoriteListPage(
+                      selectedUrl: _currentUrl,
+                      onItemTap: _onFavoriteItemTap,
+                      isDrawerMode: true,
                     ),
                   ),
-                  body: IndexedStack(
-                    index: controller.currentTabIndex.value,
-                    children: _pages,
-                  ),
-                  bottomNavigationBar: BottomNavigationBar(
-                    currentIndex: controller.currentTabIndex.value,
-                    onTap: controller.switchToTab,
-                    items: const [
-                      BottomNavigationBarItem(
-                          icon: Icon(Icons.web), label: '网页'),
-                      BottomNavigationBarItem(
-                          icon: Icon(Icons.download), label: '下载'),
-                    ],
-                  ),
-                ));
+                ),
+                body: IndexedStack(
+                  index: safeIndex,
+                  children: _pages,
+                ),
+                bottomNavigationBar: BottomNavigationBar(
+                  currentIndex: safeIndex,
+                  onTap: _handleNavigationTap,
+                  items: navigationItems,
+                ),
+              );
+            });
           },
         );
       },

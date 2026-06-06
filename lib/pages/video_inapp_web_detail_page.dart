@@ -9,6 +9,7 @@ import 'package:player/widgets/floating_ball.dart';
 import '../config/app_config.dart';
 import '../config/event_names.dart';
 import '../controllers/home_page_controller.dart';
+import '../models/download_task.dart';
 import '../models/favorite.dart';
 import '../routes/route_helper.dart';
 import '../services/download_service.dart';
@@ -43,9 +44,13 @@ class VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
   bool _allowPop = true; // 初始值为 true，允许返回
   double _progress = 0;
   bool _isLoading = true;
+  bool _isExtractingMedia = false;
+  String _extractStatusText = '';
+  int _extractRunId = 0;
 
   Future<void> reloadWebViewWithUrl(String newUrl) async {
     if (_controller != null && newUrl.isNotEmpty) {
+      _cancelExtractFeedback();
       setState(() {
         url = newUrl;
         _isLoading = true;
@@ -136,6 +141,7 @@ class VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
               }
               if (newUrl.isNotEmpty) {
                 if (_controller != null) {
+                  _cancelExtractFeedback();
                   _controller!
                       .loadUrl(urlRequest: URLRequest(url: WebUri(newUrl)));
                 }
@@ -153,6 +159,7 @@ class VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
   }
 
   Future<void> _reload() async {
+    _cancelExtractFeedback();
     await _controller?.reload();
   }
 
@@ -205,76 +212,187 @@ class VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
     }
   }
 
-  String _generateFileName(String title, int index, String url) {
+  String _generateFileName(
+    String title,
+    int index,
+    String url,
+    ExtractedMediaType type,
+  ) {
     final safeTitle = title.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_'); // 清理非法字符
     final shortHash = url.hashCode.toRadixString(16);
     final now = DateTime.now();
     final timeStr = DateFormat('yyyyMMddHHmmss').format(now);
-    return "$safeTitle-$shortHash-$timeStr-$index.mp4";
+    final suffix = type == ExtractedMediaType.audio ? 'mp3' : 'mp4';
+    return "$safeTitle-$shortHash-$timeStr-$index.$suffix";
+  }
+
+  DownloadMediaType _toDownloadMediaType(ExtractedMediaType type) {
+    return type == ExtractedMediaType.audio
+        ? DownloadMediaType.audio
+        : DownloadMediaType.video;
+  }
+
+  void _cancelExtractFeedback() {
+    _extractRunId++;
+    if (!mounted) return;
+    if (!_isExtractingMedia && _extractStatusText.isEmpty) return;
+
+    setState(() {
+      _isExtractingMedia = false;
+      _extractStatusText = '';
+    });
+  }
+
+  bool _isCurrentExtractRun(int extractRunId) {
+    return mounted && extractRunId == _extractRunId;
+  }
+
+  void _updateExtractStatus(int extractRunId, String text) {
+    if (!_isCurrentExtractRun(extractRunId)) return;
+
+    if (!mounted) return;
+    setState(() {
+      _extractStatusText = text;
+    });
   }
 
   Future<void> _handleExtract() async {
+    if (_isExtractingMedia) {
+      Get.snackbar('媒体链接提取', '正在提取中，请稍候');
+      return;
+    }
+
+    setState(() {
+      _isExtractingMedia = true;
+      _extractStatusText = '正在分析页面媒体链接...';
+    });
+
+    final extractRunId = ++_extractRunId;
     final downloadService = Get.find<DownloadService>();
 
-    if (_controller == null) {
-      Get.snackbar('视频链接提取', '未找到视频链接');
-      return;
-    }
-
-    // 获取当前网页的 URL
-    final currentUrl = (await _controller!.getUrl())?.toString();
-
-    if (currentUrl == null || currentUrl.isEmpty) {
-      Get.snackbar('视频链接提取', '无法获取当前网页地址');
-      return;
-    }
-
-    String? pageTitle;
     try {
-      pageTitle = await _controller!.getTitle();
-    } catch (_) {
-      pageTitle = _pageTitle; // fallback
-    }
-
-    pageTitle = (pageTitle != null && pageTitle.trim().isNotEmpty)
-        ? pageTitle.trim()
-        : "video_${DateTime.now().millisecondsSinceEpoch}";
-
-    final executor = InAppWebViewScriptExecutor(_controller!);
-    final urls = await VideoExtractor.extractVideoUrls(executor);
-
-    if (urls.isNotEmpty) {
-      int addedCount = 0;
-
-      for (final entry in urls.asMap().entries) {
-        final index = entry.key;
-        final url = entry.value;
-        final existed = downloadService.tasks.any((task) => task.url == url);
-
-        if (!existed) {
-          final uniqueFileName = _generateFileName(pageTitle, index, url);
-          downloadService.addDownloadTask(
-            url,
-            currentUrl,
-            fileName: uniqueFileName, // ✅ 传入当前网页链接
-          );
-          addedCount++;
-        }
+      if (_controller == null) {
+        Get.snackbar('媒体链接提取', '未找到可用页面');
+        return;
       }
 
       Get.snackbar(
-        '视频链接提取成功',
-        '共提取 ${urls.length} 个链接，已添加 $addedCount 个到下载列表',
-        mainButton: TextButton(
-          onPressed: () {
-            bool foundHome = false;
-            _backToHomeAndSwitchTab(1);
-          },
-          child: const Text('前往下载页'),
-        ),
+        '媒体链接提取',
+        '正在分析当前页面，请稍候...',
+        duration: const Duration(seconds: 2),
+        showProgressIndicator: true,
       );
-    } else {
-      Get.snackbar('视频链接提取', '未找到视频链接');
+
+      _updateExtractStatus(extractRunId, '正在获取当前网页地址...');
+
+      // 获取当前网页的 URL
+      final currentUrl = (await _controller!.getUrl())?.toString();
+      if (!_isCurrentExtractRun(extractRunId)) return;
+
+      if (currentUrl == null || currentUrl.isEmpty) {
+        Get.snackbar('媒体链接提取', '无法获取当前网页地址');
+        return;
+      }
+
+      String? pageTitle;
+      try {
+        pageTitle = await _controller!.getTitle();
+      } catch (_) {
+        pageTitle = _pageTitle; // fallback
+      }
+      if (!_isCurrentExtractRun(extractRunId)) return;
+
+      pageTitle = (pageTitle != null && pageTitle.trim().isNotEmpty)
+          ? pageTitle.trim()
+          : "media_${DateTime.now().millisecondsSinceEpoch}";
+
+      _updateExtractStatus(extractRunId, '正在识别音频和视频链接...');
+
+      final executor = InAppWebViewScriptExecutor(_controller!);
+      final mediaItems = await VideoExtractor.extractMediaUrls(
+        executor,
+        pageUrl: currentUrl,
+        pageTitle: pageTitle,
+      );
+      if (!_isCurrentExtractRun(extractRunId)) return;
+
+      if (mediaItems.isNotEmpty) {
+        int addedCount = 0;
+        int existedCount = 0;
+
+        _updateExtractStatus(
+          extractRunId,
+          '已找到 ${mediaItems.length} 个媒体，正在加入下载任务...',
+        );
+
+        for (final entry in mediaItems.asMap().entries) {
+          if (!_isCurrentExtractRun(extractRunId)) return;
+
+          final index = entry.key;
+          final media = entry.value;
+          final mediaType = _toDownloadMediaType(media.type);
+          final existed = downloadService.tasks.any(
+            (task) => task.url == media.url && task.mediaType == mediaType,
+          );
+
+          if (existed) {
+            existedCount++;
+            continue;
+          }
+
+          _updateExtractStatus(
+            extractRunId,
+            '正在添加下载任务 ${addedCount + 1}/${mediaItems.length}...',
+          );
+
+          final uniqueFileName = media.name?.trim().isNotEmpty == true
+              ? media.name!.trim()
+              : _generateFileName(pageTitle, index, media.url, media.type);
+          await downloadService.addDownloadTask(
+            media.url,
+            currentUrl,
+            fileName: uniqueFileName,
+            mediaType: mediaType,
+          );
+          if (!_isCurrentExtractRun(extractRunId)) return;
+          addedCount++;
+        }
+
+        final audioCount = mediaItems
+            .where((item) => item.type == ExtractedMediaType.audio)
+            .length;
+        final videoCount = mediaItems
+            .where((item) => item.type == ExtractedMediaType.video)
+            .length;
+        final resultText = addedCount > 0
+            ? '音频 $audioCount 个，视频 $videoCount 个，已添加 $addedCount 个下载任务并开始下载'
+            : '音频 $audioCount 个，视频 $videoCount 个，都已在下载列表中';
+        final existedText = existedCount > 0 ? '，跳过 $existedCount 个已存在任务' : '';
+
+        Get.snackbar(
+          '媒体链接提取成功',
+          '$resultText$existedText',
+          mainButton: TextButton(
+            onPressed: () {
+              _backToHomeAndSwitchTab(1);
+            },
+            child: const Text('前往下载页'),
+          ),
+        );
+      } else {
+        Get.snackbar('媒体链接提取', '未找到可下载的音频或视频链接');
+      }
+    } catch (e) {
+      if (_isCurrentExtractRun(extractRunId)) {
+        Get.snackbar('媒体链接提取失败', e.toString());
+      }
+    } finally {
+      if (_isCurrentExtractRun(extractRunId)) {
+        setState(() {
+          _isExtractingMedia = false;
+          _extractStatusText = '';
+        });
+      }
     }
   }
 
@@ -310,6 +428,12 @@ class VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
   Future<bool> canGoBack() async {
     if (_controller == null) return false;
     return await _controller?.canGoBack() ?? false; // 或者你已有 controller
+  }
+
+  void _handlePageUrlChanged(String? newUrl) {
+    if (newUrl == null || newUrl.isEmpty || newUrl == url) return;
+    url = newUrl;
+    _cancelExtractFeedback();
   }
 
   @override
@@ -386,6 +510,7 @@ class VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
                           _updateCanPop();
                         },
                         onLoadStop: (controller, url) async {
+                          _handlePageUrlChanged(url?.toString());
                           // 更新标题（即使 URL 不变，也要更新 title）
                           _checkIfFavorite(url?.toString());
                           _updateCanPop();
@@ -393,6 +518,7 @@ class VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
                         },
                         onUpdateVisitedHistory:
                             (controller, url, androidIsReload) async {
+                          _handlePageUrlChanged(url.toString());
                           _checkIfFavorite(url.toString());
                           // 延迟确保 controller 状态更新完成
                           Future.delayed(const Duration(milliseconds: 300),
@@ -417,6 +543,7 @@ class VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
                           });
                         },
                       ),
+                      _buildExtractStatus(),
                       FloatingBall(
                         child: _buildFab(),
                       ),
@@ -435,8 +562,70 @@ class VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
   Widget _buildFab() {
     return FloatingActionButton(
       onPressed: _handleExtract,
-      child: const Icon(Icons.download),
-      tooltip: '提取视频',
+      tooltip: _isExtractingMedia ? '正在提取媒体' : '提取媒体',
+      child: _isExtractingMedia
+          ? const SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(
+                color: Colors.white,
+                strokeWidth: 2.4,
+              ),
+            )
+          : const Icon(Icons.download),
+    );
+  }
+
+  Widget _buildExtractStatus() {
+    if (!_isExtractingMedia || _extractStatusText.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Positioned(
+      left: 16,
+      right: 16,
+      top: 16,
+      child: IgnorePointer(
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: Material(
+            color: colorScheme.surface,
+            borderRadius: BorderRadius.circular(8),
+            elevation: 6,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.2,
+                      color: colorScheme.primary,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Flexible(
+                    child: Text(
+                      _extractStatusText,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: colorScheme.onSurface,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

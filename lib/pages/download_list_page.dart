@@ -58,38 +58,63 @@ class _DownloadListPageState extends State<DownloadListPage> {
               clipBehavior: Clip.antiAlias,
               elevation: 0, // 不要阴影
               child: InkWell(
-                onTap: () => Get.toNamed(RouteHelper.videoSwiper,
-                    arguments: {'initialIndex': index}),
+                onTap: () {
+                  if (task.mediaType == DownloadMediaType.video) {
+                    Get.toNamed(RouteHelper.videoSwiper,
+                        arguments: {'initialIndex': index});
+                  } else if (task.status == DownloadStatus.completed &&
+                      task.filePath != null) {
+                    Get.toNamed(
+                      RouteHelper.player,
+                      arguments: {
+                        'path': task.filePath,
+                        'title': task.fileName ?? '音频',
+                        'mediaType': DownloadMediaType.audio,
+                      },
+                    );
+                  } else {
+                    Get.snackbar(
+                      '音频文件',
+                      '音频尚未下载完成，当前状态：${task.status.name}',
+                    );
+                  }
+                },
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // 视频缩略图或占位
+                    // 媒体缩略图或占位
                     AspectRatio(
                       aspectRatio: 16 / 9,
                       child: Container(
                         color: Colors.grey[300],
-                        child: (task.thumbnailPath != null &&
-                                File(task.thumbnailPath!).existsSync())
-                            ? Image.file(
-                                File(task.thumbnailPath!),
-                                fit: BoxFit.cover,
-                              ).blurred(
-                                blur: 20,
-                                blurColor: Colors.black26,
-                                overlay: Container(
-                                  alignment: Alignment.center,
-                                  child: Image.file(
-                                    File(task.thumbnailPath!),
-                                    fit: BoxFit.contain,
-                                    width: double.infinity,
-                                  ),
-                                ),
+                        child: task.mediaType == DownloadMediaType.audio
+                            ? const Icon(
+                                Icons.audiotrack,
+                                size: 56,
+                                color: Colors.white70,
                               )
-                            : const Icon(
-                                Icons.videocam_off_outlined,
-                                size: 48,
-                                color: Colors.white54,
-                              ),
+                            : (task.thumbnailPath != null &&
+                                    File(task.thumbnailPath!).existsSync())
+                                ? Image.file(
+                                    File(task.thumbnailPath!),
+                                    fit: BoxFit.cover,
+                                  ).blurred(
+                                    blur: 20,
+                                    blurColor: Colors.black26,
+                                    overlay: Container(
+                                      alignment: Alignment.center,
+                                      child: Image.file(
+                                        File(task.thumbnailPath!),
+                                        fit: BoxFit.contain,
+                                        width: double.infinity,
+                                      ),
+                                    ),
+                                  )
+                                : const Icon(
+                                    Icons.videocam_off_outlined,
+                                    size: 48,
+                                    color: Colors.white54,
+                                  ),
                       ),
                     ),
                     // 文件名
@@ -111,7 +136,9 @@ class _DownloadListPageState extends State<DownloadListPage> {
                         children: [
                           Visibility(
                               visible: task.status != DownloadStatus.completed,
-                              child: Text('状态: ${task.status.name}')),
+                              child: Text(
+                                '${task.mediaType == DownloadMediaType.audio ? '音频' : '视频'} · 状态: ${task.status.name}',
+                              )),
                           if (task.status == DownloadStatus.downloading)
                             Padding(
                               padding: const EdgeInsets.only(top: 8.0),

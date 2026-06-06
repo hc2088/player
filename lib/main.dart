@@ -6,6 +6,7 @@ import 'routes/route_helper.dart';
 import 'services/download_service.dart';
 import 'services/favorite_service.dart';
 import 'utils/screen_info.dart';
+import 'widgets/app_privacy_gate.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -29,14 +30,18 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ScreenInfoProvider(
-      child: GetMaterialApp(
-        title: '视频下载播放示例',
-        navigatorKey: RouteHelper.navigatorKey,
-        initialRoute: '/',
-        getPages: RouteHelper.routes,
-        //  在 builder 中注入 ScreenInfoProvider，这样就能获取到 MaterialApp 的 MediaQuery
-      ),
+    return GetMaterialApp(
+      title: '视频下载播放示例',
+      navigatorKey: RouteHelper.navigatorKey,
+      initialRoute: '/',
+      getPages: RouteHelper.routes,
+      builder: (context, child) {
+        return ScreenInfoProvider(
+          child: AppPrivacyGate(
+            child: child ?? const SizedBox.shrink(),
+          ),
+        );
+      },
     );
   }
 }

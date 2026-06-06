@@ -8,6 +8,7 @@ import 'package:chewie/chewie.dart';
 
 import '../models/download_task.dart';
 import '../services/download_service.dart';
+import '../services/file_share_service.dart';
 
 class VideoSwiperPage extends StatefulWidget {
   const VideoSwiperPage({super.key});
@@ -70,10 +71,12 @@ class _VideoSwiperPageState extends State<VideoSwiperPage>
 
   Future<VideoPlayerController?> _initControllerAt(int index) async {
     if (index < 0 || index >= _downloadService.tasks.length) return null;
-    if (_videoControllerMap.containsKey(index))
+    if (_videoControllerMap.containsKey(index)) {
       return _videoControllerMap[index];
+    }
 
     final task = _downloadService.tasks[index];
+    if (task.mediaType != DownloadMediaType.video) return null;
 
     // 如果未完成，监听其变化，等完成后再初始化
     if (task.status != DownloadStatus.completed) {
@@ -206,6 +209,17 @@ class _VideoSwiperPageState extends State<VideoSwiperPage>
     _initControllersAround(index);
   }
 
+  Future<void> _shareTask(DownloadTask task) async {
+    final path = task.filePath;
+    if (path == null || path.isEmpty) return;
+
+    try {
+      await FileShareService.shareFile(path, title: task.fileName);
+    } catch (e) {
+      Get.snackbar('分享失败', e.toString());
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -225,6 +239,46 @@ class _VideoSwiperPageState extends State<VideoSwiperPage>
             final task = _downloadService.tasks[index];
 
             if (task.status == DownloadStatus.completed) {
+              if (task.mediaType != DownloadMediaType.video) {
+                return SafeArea(
+                  child: Container(
+                    color: Colors.black,
+                    alignment: Alignment.center,
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.audiotrack,
+                          color: Colors.white70,
+                          size: 64,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          task.fileName ?? '音频文件',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          '音频已下载，当前页面仅播放视频',
+                          style: TextStyle(color: Colors.white70),
+                        ),
+                        const SizedBox(height: 20),
+                        IconButton.filledTonal(
+                          tooltip: '分享',
+                          onPressed: () => _shareTask(task),
+                          icon: const Icon(Icons.share),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }
+
               final chewieController = _chewieControllerMap[index];
               final filePath = task.filePath;
 
@@ -250,6 +304,15 @@ class _VideoSwiperPageState extends State<VideoSwiperPage>
                   alignment: Alignment.bottomCenter,
                   children: [
                     Chewie(controller: chewieController),
+                    Positioned(
+                      top: 12,
+                      right: 12,
+                      child: IconButton.filledTonal(
+                        tooltip: '分享',
+                        onPressed: () => _shareTask(task),
+                        icon: const Icon(Icons.share),
+                      ),
+                    ),
                   ],
                 ),
               );
