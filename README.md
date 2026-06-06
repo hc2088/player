@@ -99,6 +99,78 @@ assets/local_media/
 - 音频：`.mp3/.m4a/.aac/.wav/.ogg/.flac`
 - 视频：`.mp4`
 
+### 加密本地媒体
+
+项目内提供了加密脚本：
+
+```bash
+bash scripts/encrypt_local_media.sh -i /path/to/plain_media --clean
+```
+
+请用 **bash** 运行，不要用 `sh`。脚本内部使用了 Bash 语法（如 `< <(...)` 进程替换），若执行 `sh scripts/encrypt_local_media.sh ...` 会报错：
+
+```text
+scripts/encrypt_local_media.sh: line 107: syntax error near unexpected token `<'
+```
+
+以下写法均可：
+
+```bash
+bash scripts/encrypt_local_media.sh -i /path/to/plain_media --clean
+./scripts/encrypt_local_media.sh -i /path/to/plain_media --clean   # 需先 chmod +x
+```
+
+脚本会：
+
+- 扫描输入目录中的图片、音频、视频文件。
+- 提示输入原文密码，并输出该密码的 MD5，方便配置 `unlockPasswordMd5`。
+- 使用 OpenSSL `aes-256-cbc -a -salt -md sha256` 加密文件。
+- 默认输出到 `assets/local_media/`，文件名形如 `demo.mp3.cpp`。
+- 自动生成 `assets/local_media/index.json`，App 会用这个索引读取加密资源。
+
+如果 OpenSSL 输出 `deprecated key derivation used` 提示，可以忽略；当前 App 解密逻辑就是按这个 OpenSSL Salted 格式实现的。不要自行添加 `-pbkdf2`，除非同步修改 App 端解密逻辑。
+
+示例：
+
+```bash
+mkdir -p ~/Desktop/plain_media
+cp ~/Downloads/demo.mp3 ~/Desktop/plain_media/
+bash scripts/encrypt_local_media.sh -i ~/Desktop/plain_media --clean
+```
+
+如果希望在自动化环境中使用，也可以通过环境变量传入密码：
+
+```bash
+LOCAL_MEDIA_PASSWORD='1234' bash scripts/encrypt_local_media.sh -i ./plain_media --clean
+```
+
+加密完成后，确认脚本输出的 MD5 已写入 `LocalMediaService.unlockPasswordMd5`，然后重新构建 App。解锁和播放时输入的仍然是原文密码。
+
+### 在电脑端解密查看
+
+如果只是想在电脑上临时解密并查看这些文件，可以使用配套解密脚本：
+
+```bash
+bash scripts/decrypt_local_media.sh -i assets/local_media -o ~/Desktop/decrypted_media --clean
+```
+
+同样请用 **bash** 运行，不要用 `sh`（原因同上）。
+
+脚本会：
+
+- 扫描输入目录中的 `.cpp/.dat` 加密文件。
+- 提示输入原文密码，并打印该密码的 MD5 供核对。
+- 默认兼容 `sha256` 和旧版 `md5` 两种 OpenSSL 派生方式。
+- 把 `demo.mp3.cpp` 解密还原为 `demo.mp3`，输出到指定目录。
+
+自动化用法：
+
+```bash
+LOCAL_MEDIA_PASSWORD='1234' bash scripts/decrypt_local_media.sh -o ./decrypted_media --clean
+```
+
+这里同样要输入原文密码，不是 MD5。解密后的文件是明文媒体文件，请不要提交到仓库。
+
 ## 项目结构
 
 ```text
@@ -138,6 +210,5 @@ flutter analyze
 - 增加锁屏媒体控制和通知栏播放控制。
 - 优化下载列表中的任务状态展示。
 - 扩展更多音视频站点的解析兼容性。
-- 优化本地加密媒体的索引生成流程。
 
 欢迎使用与反馈。
