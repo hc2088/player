@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:player/utils/string_ext.dart';
 
 import '../config/app_config.dart';
 import '../config/event_names.dart';
@@ -36,7 +35,7 @@ class _FavoriteListPageState extends State<FavoriteListPage> {
   void initState() {
     super.initState();
 
-    _selectedUrl = widget.selectedUrl;
+    _selectedUrl = AppConfig.normalizeWebUrl(widget.selectedUrl);
 
     _favoriteUpdateSubscription = listenNamedEvent<FavoriteChangedEvent>(
       name: EventNames.favoriteChanged,
@@ -55,6 +54,15 @@ class _FavoriteListPageState extends State<FavoriteListPage> {
   }
 
   @override
+  void didUpdateWidget(covariant FavoriteListPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final selectedUrl = AppConfig.normalizeWebUrl(widget.selectedUrl);
+    if (selectedUrl != AppConfig.normalizeWebUrl(oldWidget.selectedUrl)) {
+      _selectedUrl = selectedUrl;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final favoriteService = Get.find<FavoriteService>();
 
@@ -70,36 +78,30 @@ class _FavoriteListPageState extends State<FavoriteListPage> {
           itemBuilder: (context, index) {
             final fav = favorites[index];
 
-            final isSelected = _selectedUrl == fav.url;
+            final itemUrl = AppConfig.normalizeWebUrl(fav.url);
+            final isSelected = _selectedUrl == itemUrl;
 
             final tile = ListTile(
+              dense: widget.isDrawerMode,
+              contentPadding: EdgeInsets.symmetric(
+                horizontal: widget.isDrawerMode ? 14 : 16,
+                vertical: widget.isDrawerMode ? 6 : 8,
+              ),
               selected: isSelected,
               //selectedTileColor: Colors.blue.shade100,
               // 选中背景色
-              title: widget.isDrawerMode
-                  ? Text(
-                      "${index + 1}、${fav.title.breakWord}",
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: isSelected ? Colors.blue : null, // 选中文字颜色
-                      ),
-                    )
-                  : Text(
-                      fav.title.isNotEmpty ? fav.title : fav.url,
-                      style: TextStyle(
-                        color: isSelected ? Colors.blue : null,
-                      ),
-                    ),
-              subtitle: widget.isDrawerMode ? null : Text(fav.url),
+              title: _FavoriteContent(
+                favorite: fav,
+                selected: isSelected,
+                compact: widget.isDrawerMode,
+              ),
               trailing: widget.isDrawerMode
                   ? null
                   : IconButton(
                       icon: const Icon(Icons.delete),
                       onPressed: () {
                         favoriteService.removeFavorite(fav);
-                        Get.snackbar('收藏', '已删除');
+                        _showMessage('已删除');
                         if (_selectedUrl == fav.url) {
                           setState(() {
                             _selectedUrl = null; // 删除时取消选中
@@ -108,15 +110,19 @@ class _FavoriteListPageState extends State<FavoriteListPage> {
                       },
                     ),
               onTap: () async {
+                if (itemUrl.isEmpty) {
+                  _showMessage('收藏地址为空');
+                  return;
+                }
                 setState(() {
-                  _selectedUrl = fav.url;
+                  _selectedUrl = itemUrl;
                 });
                 if (widget.onItemTap != null) {
-                  widget.onItemTap!(fav.url);
+                  widget.onItemTap!(itemUrl);
                 } else {
                   Get.toNamed(RouteHelper.videoWebDetail,
-                      arguments: {'url': fav.url});
-                  await AppConfig.setCustomHomePageUrl(fav.url);
+                      arguments: {'url': itemUrl});
+                  await AppConfig.setCustomHomePageUrl(itemUrl);
                   Get.find<HomePageController>().refreshWebHome();
                 }
               },
@@ -150,7 +156,7 @@ class _FavoriteListPageState extends State<FavoriteListPage> {
         context: context,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(
-            top: Radius.circular(16),
+            top: const Radius.circular(16),
           ),
         ),
         builder: (BuildContext context) {
@@ -161,7 +167,10 @@ class _FavoriteListPageState extends State<FavoriteListPage> {
               children: [
                 Text(
                   '确认取消收藏',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 const SizedBox(height: 24),
                 Row(
@@ -178,18 +187,16 @@ class _FavoriteListPageState extends State<FavoriteListPage> {
                     Expanded(
                       child: ElevatedButton(
                         onPressed: () {
-                          // 这里写确定逻辑，例如取消收藏
-                          print('已取消收藏');
                           Navigator.of(context).pop(); // 关闭弹窗
                           favoriteService.removeFavorite(fav);
-                          Get.snackbar('收藏', '已删除');
+                          _showMessage('已删除');
                           if (_selectedUrl == fav.url) {
                             setState(() {
                               _selectedUrl = null; // 删除时取消选中
                             });
                           }
                         },
-                        child: Text('确定'),
+                        child: const Text('确定'),
                       ),
                     ),
                   ],
@@ -198,5 +205,110 @@ class _FavoriteListPageState extends State<FavoriteListPage> {
             ),
           );
         });
+  }
+
+  void _showMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.maybeOf(context)
+      ?..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          content: Text(message),
+        ),
+      );
+  }
+}
+
+class _FavoriteContent extends StatelessWidget {
+  const _FavoriteContent({
+    required this.favorite,
+    required this.selected,
+    required this.compact,
+  });
+
+  final Favorite favorite;
+  final bool selected;
+  final bool compact;
+
+  String get _domain {
+    final parsed = Uri.tryParse(favorite.url.trim());
+    if (parsed != null && parsed.host.isNotEmpty) {
+      return parsed.hasPort ? '${parsed.host}:${parsed.port}' : parsed.host;
+    }
+
+    final withScheme = Uri.tryParse('https://${favorite.url.trim()}');
+    if (withScheme != null && withScheme.host.isNotEmpty) {
+      return withScheme.hasPort
+          ? '${withScheme.host}:${withScheme.port}'
+          : withScheme.host;
+    }
+
+    return '未知域名';
+  }
+
+  String get _title {
+    final title = favorite.title.trim();
+    if (title.isNotEmpty) return title;
+    if (_domain != '未知域名') return _domain;
+    return favorite.url.trim().isNotEmpty ? favorite.url.trim() : '未命名网页';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final titleSize = compact ? 13.0 : 15.0;
+    final metaSize = compact ? 11.0 : 12.0;
+    final selectedColor = selected ? Colors.blue : null;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          _title,
+          maxLines: compact ? 2 : 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: selectedColor,
+            fontSize: titleSize,
+            fontWeight: FontWeight.w700,
+            height: 1.2,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Row(
+          children: [
+            const Icon(
+              Icons.public,
+              size: 13,
+              color: Colors.blueGrey,
+            ),
+            const SizedBox(width: 4),
+            Expanded(
+              child: Text(
+                _domain,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: selected ? Colors.blue : Colors.blueGrey,
+                  fontSize: metaSize,
+                  height: 1.1,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 3),
+        Text(
+          favorite.url,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: Colors.grey.shade600,
+            fontSize: metaSize,
+            height: 1.15,
+          ),
+        ),
+      ],
+    );
   }
 }

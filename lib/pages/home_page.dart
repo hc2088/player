@@ -98,20 +98,31 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _onFavoriteItemTap(String url) async {
-    Navigator.of(context).pop();
+    final targetUrl = AppConfig.normalizeWebUrl(url);
+    if (targetUrl.isEmpty) {
+      _showMessage('收藏地址为空');
+      return;
+    }
 
-    // 更新当前URL，刷新WebView
+    if (_scaffoldKey.currentState?.isDrawerOpen ?? false) {
+      Navigator.of(context).pop();
+    }
+
+    await AppConfig.setCustomHomePageUrl(targetUrl);
+    if (!mounted) return;
+
+    // 更新当前 URL，刷新 WebView。这里直接切换 Tab，避免触发双击 Tab 的默认首页刷新逻辑。
     setState(() {
-      _currentUrl = url;
-      Get.find<HomePageController>().switchToTab(0);
+      _currentUrl = targetUrl;
+      _initPages();
     });
 
-    await AppConfig.setCustomHomePageUrl(url);
+    controller.currentTabIndex.value = 0;
 
-    final state = _videoPageKey.currentState;
-    if (state != null) {
-      state.reloadWebViewWithUrl(url);
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _videoPageKey.currentState?.reloadWebViewWithUrl(targetUrl);
+    });
   }
 
   void _handleNavigationTap(int index) {

@@ -52,25 +52,70 @@ class VideoExtractor {
     String? pageUrl,
     String? pageTitle,
   }) async {
-    final items = <ExtractedMediaUrl>[];
-    items.addAll(await _extractDomMediaUrls(executor));
-
     final uri = pageUrl == null ? null : Uri.tryParse(pageUrl);
     final pid = _extractHaijiaoPid(uri);
     if (uri != null && pid != null) {
-      items.addAll(await _extractHaijiaoMediaUrls(
+      final haijiaoItems = await _extractHaijiaoMediaUrls(
         pageUri: uri,
         pid: pid,
         pageTitle: pageTitle,
-      ));
+      );
+      if (haijiaoItems.isNotEmpty) {
+        return _dedupe(haijiaoItems);
+      }
     }
 
+    final items = await _extractDomMediaUrls(executor, pageUri: uri);
     return _dedupe(items);
   }
 
+  static Future<String?> refreshHaijiaoMediaUrl({
+    required String pageUrl,
+    required int attachmentId,
+    required ExtractedMediaType type,
+  }) async {
+    final pageUri = Uri.tryParse(pageUrl);
+    final pid = _extractHaijiaoPid(pageUri);
+    if (pageUri == null || pid == null) return null;
+
+    try {
+      final topicUri = _sameOriginUri(pageUri, '/api/topic/$pid');
+      final topic = await _getDecodedApiData(topicUri, pageUri);
+      if (topic is Map) {
+        final attachments = topic['attachments'];
+        if (attachments is List) {
+          for (final attachment in attachments.whereType<Map>()) {
+            if (_intValue(attachment['id']) != attachmentId) continue;
+
+            final remoteUrl = _nonEmptyString(attachment['remoteUrl']);
+            if (remoteUrl != null && _looksLikeMediaUrl(remoteUrl, type)) {
+              final resolvedUrl = _resolveUrl(pageUri, remoteUrl);
+              if (resolvedUrl != null) return resolvedUrl;
+            }
+          }
+        }
+      }
+    } catch (_) {}
+
+    final lines = await _extractHaijiaoAttachmentLines(
+      pageUri: pageUri,
+      pid: pid,
+      attachmentId: attachmentId,
+      type: type,
+    );
+
+    for (final line in lines) {
+      final resolvedUrl = _resolveUrl(pageUri, line.url);
+      if (resolvedUrl != null) return resolvedUrl;
+    }
+
+    return null;
+  }
+
   static Future<List<ExtractedMediaUrl>> _extractDomMediaUrls(
-    ScriptExecutor executor,
-  ) async {
+    ScriptExecutor executor, {
+    Uri? pageUri,
+  }) async {
     try {
       const js = """
         (() => {
@@ -87,9 +132,14 @@ class VideoExtractor {
             const name = node.getAttribute('title')
               || node.getAttribute('aria-label')
               || '';
-            push(type, node.currentSrc || node.src, name);
+            [
+              node.currentSrc,
+              node.src,
+              node.getAttribute('src')
+            ].forEach(url => push(type, url, name));
             node.querySelectorAll('source').forEach(source => {
-              push(type, source.src || source.getAttribute('src'), name);
+              push(type, source.src, name);
+              push(type, source.getAttribute('src'), name);
             });
           });
 
@@ -124,8 +174,10 @@ class VideoExtractor {
       return decoded
           .whereType<Map>()
           .map((item) {
-            final url = item['url']?.toString().trim() ?? '';
+            final rawUrl = item['url']?.toString().trim() ?? '';
+            final url = _resolveDomUrl(pageUri, rawUrl);
             if (url.isEmpty) return null;
+            if (!_isDownloadableWebUrl(url)) return null;
             return ExtractedMediaUrl(
               url: url,
               type: item['type'] == 'audio'
@@ -507,6 +559,27 @@ class VideoExtractor {
     if (uri.hasScheme) return trimmed;
 
     return pageUri.resolveUri(uri).toString();
+  }
+
+  static String _resolveDomUrl(Uri? pageUri, String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) return '';
+
+    if (pageUri == null) return trimmed;
+
+    final uri = Uri.tryParse(trimmed);
+    if (uri == null) return '';
+    if (uri.hasScheme) return trimmed;
+
+    return pageUri.resolveUri(uri).toString();
+  }
+
+  static bool _isDownloadableWebUrl(String value) {
+    final uri = Uri.tryParse(value.trim());
+    if (uri == null || !uri.hasScheme) return false;
+
+    final scheme = uri.scheme.toLowerCase();
+    return scheme == 'http' || scheme == 'https';
   }
 
   static String? _nonEmptyString(Object? value) {

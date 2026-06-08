@@ -49,23 +49,31 @@ class VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
   int _extractRunId = 0;
 
   Future<void> reloadWebViewWithUrl(String newUrl) async {
-    if (_controller != null && newUrl.isNotEmpty) {
-      _cancelExtractFeedback();
-      setState(() {
-        url = newUrl;
-        _isLoading = true;
-        _progress = 0;
-        _webViewKey = UniqueKey(); // 重建 key
-      });
-      await _controller!.loadUrl(urlRequest: URLRequest(url: WebUri(newUrl)));
+    final targetUrl = AppConfig.normalizeWebUrl(newUrl);
+    if (targetUrl.isEmpty || !mounted) return;
+
+    final controller = _controller;
+    _cancelExtractFeedback();
+    setState(() {
+      url = targetUrl;
+      _isLoading = true;
+      _progress = 0;
+      if (controller == null) {
+        _webViewKey = UniqueKey();
+      }
+    });
+
+    if (controller != null) {
+      await controller.loadUrl(urlRequest: URLRequest(url: WebUri(targetUrl)));
     }
+    _checkIfFavorite(targetUrl);
   }
 
   @override
   void initState() {
     super.initState();
 
-    url = widget.defaultUrl ?? '';
+    url = AppConfig.normalizeWebUrl(widget.defaultUrl);
 
     _favoriteChangedSub = listenNamedEvent<FavoriteChangedEvent>(
       name: EventNames.favoriteChanged,
@@ -132,13 +140,7 @@ class VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
           ),
           TextButton(
             onPressed: () {
-              var newUrl = urlController.text.trim();
-              // 如果没有以 http/https 开头，默认加上 https://
-              if (newUrl.isNotEmpty &&
-                  !newUrl.toLowerCase().startsWith('http://') &&
-                  !newUrl.toLowerCase().startsWith('https://')) {
-                newUrl = 'https://$newUrl';
-              }
+              var newUrl = AppConfig.normalizeWebUrl(urlController.text);
               if (newUrl.isNotEmpty) {
                 if (_controller != null) {
                   _cancelExtractFeedback();
@@ -147,8 +149,7 @@ class VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
                 }
               }
               AppConfig.setCustomHomePageUrl(newUrl);
-              // 显示提示
-              Get.snackbar('提示', '默认首页已修改为：$newUrl');
+              _showPageSnack('提示', '默认首页已修改为：$newUrl');
               Navigator.of(context).pop();
             },
             child: const Text('确定'),
@@ -167,7 +168,7 @@ class VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
     var isAdded = false;
     if (url != null) {
       final favoriteService = Get.find<FavoriteService>();
-      isAdded = await favoriteService.isFavorite(url);
+      isAdded = favoriteService.isFavorite(url);
     }
     setState(() {
       isFavorite = isAdded;
@@ -181,35 +182,61 @@ class VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
     final currentUrl = (await _controller!.getUrl())?.toString();
 
     if (currentUrl == null || currentUrl.isEmpty) {
-      Get.snackbar('收藏操作失败', '无法获取当前网页地址');
+      _showPageSnack('收藏操作失败', '无法获取当前网页地址');
       return;
     }
 
     // 判断当前 URL 是否已收藏
-    final bool isFavorite = await favoriteService.isFavorite(currentUrl);
+    final bool isFavorite = favoriteService.isFavorite(currentUrl);
 
     bool success = false;
     if (isFavorite) {
       // 已收藏，则取消收藏
       success = await favoriteService.removeFavoriteUrl(currentUrl);
-      Get.snackbar('取消收藏', success ? '已成功取消收藏' : '取消收藏失败');
+      _showPageSnack('取消收藏', success ? '已成功取消收藏' : '取消收藏失败');
     } else {
       // 未收藏，添加收藏
       success = await favoriteService.addFavorite(
-        Favorite(url: currentUrl, title: _pageTitle),
+        Favorite(url: currentUrl, title: _favoriteTitleForUrl(currentUrl)),
       );
-      Get.snackbar(
+      _showPageSnack(
         '添加到收藏',
         success ? '已成功添加到收藏' : '添加收藏失败',
-        mainButton: TextButton(
-          onPressed: () {
-            RouteHelper.toUnique(RouteHelper.favorite);
-          },
-          child: const Text('前往收藏页'),
+        action: SnackBarAction(
+          label: '前往收藏页',
+          onPressed: _openFavoriteDestination,
         ),
       );
       _checkIfFavorite(currentUrl);
     }
+  }
+
+  void _openFavoriteDestination() {
+    if (widget.onOpenDrawer != null) {
+      widget.onOpenDrawer!();
+      return;
+    }
+
+    RouteHelper.toUnique(RouteHelper.favorite);
+  }
+
+  String _favoriteTitleForUrl(String url) {
+    final title = _pageTitle.trim();
+    if (title.isNotEmpty) return title;
+
+    final parsed = Uri.tryParse(url.trim());
+    if (parsed != null && parsed.host.isNotEmpty) {
+      return parsed.hasPort ? '${parsed.host}:${parsed.port}' : parsed.host;
+    }
+
+    final withScheme = Uri.tryParse('https://${url.trim()}');
+    if (withScheme != null && withScheme.host.isNotEmpty) {
+      return withScheme.hasPort
+          ? '${withScheme.host}:${withScheme.port}'
+          : withScheme.host;
+    }
+
+    return url.trim().isNotEmpty ? url.trim() : '未命名网页';
   }
 
   String _generateFileName(
@@ -256,9 +283,65 @@ class VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
     });
   }
 
+  void _showPageSnack(
+    String title,
+    String message, {
+    Duration duration = const Duration(seconds: 3),
+    bool showProgressIndicator = false,
+    SnackBarAction? action,
+  }) {
+    if (!mounted) return;
+
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger == null) {
+      debugPrint('$title: $message');
+      return;
+    }
+
+    final contentText = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 2),
+        Text(message),
+      ],
+    );
+
+    final content = showProgressIndicator
+        ? Row(
+            children: [
+              const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.2,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(child: contentText),
+            ],
+          )
+        : contentText;
+
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        duration: duration,
+        content: content,
+        action: action,
+      ),
+    );
+  }
+
   Future<void> _handleExtract() async {
     if (_isExtractingMedia) {
-      Get.snackbar('媒体链接提取', '正在提取中，请稍候');
+      _showPageSnack('媒体链接提取', '正在提取中，请稍候');
       return;
     }
 
@@ -272,11 +355,11 @@ class VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
 
     try {
       if (_controller == null) {
-        Get.snackbar('媒体链接提取', '未找到可用页面');
+        _showPageSnack('媒体链接提取', '未找到可用页面');
         return;
       }
 
-      Get.snackbar(
+      _showPageSnack(
         '媒体链接提取',
         '正在分析当前页面，请稍候...',
         duration: const Duration(seconds: 2),
@@ -290,7 +373,7 @@ class VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
       if (!_isCurrentExtractRun(extractRunId)) return;
 
       if (currentUrl == null || currentUrl.isEmpty) {
-        Get.snackbar('媒体链接提取', '无法获取当前网页地址');
+        _showPageSnack('媒体链接提取', '无法获取当前网页地址');
         return;
       }
 
@@ -348,14 +431,19 @@ class VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
           final uniqueFileName = media.name?.trim().isNotEmpty == true
               ? media.name!.trim()
               : _generateFileName(pageTitle, index, media.url, media.type);
-          await downloadService.addDownloadTask(
+          final added = await downloadService.addDownloadTask(
             media.url,
             currentUrl,
             fileName: uniqueFileName,
             mediaType: mediaType,
+            sourceAttachmentId: media.attachmentId,
           );
           if (!_isCurrentExtractRun(extractRunId)) return;
-          addedCount++;
+          if (added) {
+            addedCount++;
+          } else {
+            existedCount++;
+          }
         }
 
         final audioCount = mediaItems
@@ -369,22 +457,20 @@ class VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
             : '音频 $audioCount 个，视频 $videoCount 个，都已在下载列表中';
         final existedText = existedCount > 0 ? '，跳过 $existedCount 个已存在任务' : '';
 
-        Get.snackbar(
+        _showPageSnack(
           '媒体链接提取成功',
           '$resultText$existedText',
-          mainButton: TextButton(
-            onPressed: () {
-              _backToHomeAndSwitchTab(1);
-            },
-            child: const Text('前往下载页'),
+          action: SnackBarAction(
+            label: '前往下载页',
+            onPressed: () => _backToHomeAndSwitchTab(1),
           ),
         );
       } else {
-        Get.snackbar('媒体链接提取', '未找到可下载的音频或视频链接');
+        _showPageSnack('媒体链接提取', '未找到可下载的音频或视频链接');
       }
     } catch (e) {
       if (_isCurrentExtractRun(extractRunId)) {
-        Get.snackbar('媒体链接提取失败', e.toString());
+        _showPageSnack('媒体链接提取失败', e.toString());
       }
     } finally {
       if (_isCurrentExtractRun(extractRunId)) {

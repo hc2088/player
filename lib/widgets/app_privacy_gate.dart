@@ -94,8 +94,8 @@ class _AppPrivacyGateState extends State<AppPrivacyGate>
     return Stack(
       fit: StackFit.expand,
       children: [
-        Offstage(
-          offstage: !_unlocked,
+        IgnorePointer(
+          ignoring: !_unlocked,
           child: TickerMode(
             enabled: _unlocked,
             child: widget.child,

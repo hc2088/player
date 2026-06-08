@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:get/get.dart';
+import 'package:player/config/app_config.dart';
 import 'package:player/config/event_names.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -33,9 +34,14 @@ class FavoriteService extends GetxService {
   }
 
   Future<bool> addFavorite(Favorite fav) async {
+    final normalizedUrl = AppConfig.normalizeWebUrl(fav.url);
+    if (normalizedUrl.isEmpty) return false;
+
+    fav.url = normalizedUrl;
     print('[FavoriteService] 尝试添加收藏: ${fav.url}');
 
-    if (!favorites.any((f) => f.url == fav.url)) {
+    if (!favorites
+        .any((f) => AppConfig.normalizeWebUrl(f.url) == normalizedUrl)) {
       favorites.add(fav);
       print('[FavoriteService] 添加成功: ${fav.url}');
       await saveFavorites();
@@ -47,21 +53,31 @@ class FavoriteService extends GetxService {
   }
 
   Future<void> removeFavorite(Favorite fav) async {
-    favorites.removeWhere((f) => f.url == fav.url);
+    final normalizedUrl = AppConfig.normalizeWebUrl(fav.url);
+    favorites
+        .removeWhere((f) => AppConfig.normalizeWebUrl(f.url) == normalizedUrl);
     await saveFavorites();
     emitEvent(FavoriteChangedEvent(
-        name: EventNames.favoriteChanged, url: fav.url, isFavorite: false));
+        name: EventNames.favoriteChanged,
+        url: normalizedUrl,
+        isFavorite: false));
   }
 
   Future<bool> removeFavoriteUrl(String url) async {
-    favorites.removeWhere((f) => f.url == url);
+    final normalizedUrl = AppConfig.normalizeWebUrl(url);
+    favorites
+        .removeWhere((f) => AppConfig.normalizeWebUrl(f.url) == normalizedUrl);
     await saveFavorites();
     emitEvent(FavoriteChangedEvent(
-        name: EventNames.favoriteChanged, url: url, isFavorite: false));
+        name: EventNames.favoriteChanged,
+        url: normalizedUrl,
+        isFavorite: false));
     return true;
   }
 
   bool isFavorite(String url) {
-    return favorites.any((f) => f.url == url);
+    final normalizedUrl = AppConfig.normalizeWebUrl(url);
+    return favorites
+        .any((f) => AppConfig.normalizeWebUrl(f.url) == normalizedUrl);
   }
 }

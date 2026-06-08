@@ -5,8 +5,10 @@ enum DownloadStatus { pending, downloading, completed, failed, canceled }
 enum DownloadMediaType { video, audio }
 
 class DownloadTask {
+  String id;
   String url;
   String originPageUrl;
+  int? sourceAttachmentId;
   String? fileName;
   DownloadMediaType mediaType;
   double progress;
@@ -24,8 +26,10 @@ class DownloadTask {
   dynamic session; // FFmpegSession? 类型，可在运行中取消任务
 
   DownloadTask({
+    String? id,
     required this.url,
     required this.originPageUrl,
+    this.sourceAttachmentId,
     required DownloadStatus status,
     this.mediaType = DownloadMediaType.video,
     this.fileName,
@@ -33,13 +37,16 @@ class DownloadTask {
     this.session,
     this.thumbnailPath,
     this.filePath,
-  }) : statusRx = status.obs;
+  })  : id = id ?? _newId(),
+        statusRx = status.obs;
 
   factory DownloadTask.fromJson(Map<String, dynamic> json) {
     final mediaTypeIndex = json['mediaType'];
     return DownloadTask(
+      id: json['id']?.toString(),
       url: json['url'] ?? "",
       originPageUrl: json['originPageUrl'] ?? "",
+      sourceAttachmentId: _intFromJson(json['sourceAttachmentId']),
       fileName: json['fileName'],
       progress: (json['progress'] as num).toDouble(),
       status: DownloadStatus.values[json['status']],
@@ -55,8 +62,10 @@ class DownloadTask {
 
   Map<String, dynamic> toJson() {
     return {
+      'id': id,
       'url': url,
       'originPageUrl': originPageUrl,
+      'sourceAttachmentId': sourceAttachmentId,
       'fileName': fileName,
       'mediaType': mediaType.index,
       'progress': progress,
@@ -72,5 +81,18 @@ class DownloadTask {
 
   static List<Map<String, dynamic>> toJsonList(List<DownloadTask> list) {
     return list.map((e) => e.toJson()).toList();
+  }
+
+  static int _idSequence = 0;
+
+  static int? _intFromJson(dynamic value) {
+    if (value is int) return value;
+    return int.tryParse(value?.toString() ?? '');
+  }
+
+  static String _newId() {
+    final time = DateTime.now().microsecondsSinceEpoch.toRadixString(36);
+    final sequence = (_idSequence++).toRadixString(36);
+    return '${time}_$sequence';
   }
 }

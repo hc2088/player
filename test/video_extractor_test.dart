@@ -51,4 +51,31 @@ void main() {
       ]),
     );
   });
+
+  test('extractMediaUrls skips blob urls and keeps downloadable urls',
+      () async {
+    final executor = _FakeScriptExecutor(jsonEncode([
+      {
+        'type': 'video',
+        'url': 'blob:https://example.com/session-video',
+        'name': 'temporary video',
+      },
+      {
+        'type': 'video',
+        'url': 'https://media.example.com/movie.mp4',
+        'name': 'movie',
+      },
+      {
+        'type': 'audio',
+        'url': 'data:audio/mp3;base64,AAA',
+        'name': 'inline audio',
+      },
+    ]));
+
+    final items = await VideoExtractor.extractMediaUrls(executor);
+
+    expect(items, hasLength(1));
+    expect(items.single.url, 'https://media.example.com/movie.mp4');
+    expect(items.single.isVideo, isTrue);
+  });
 }

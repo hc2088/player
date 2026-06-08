@@ -9,6 +9,7 @@ import 'package:chewie/chewie.dart';
 import '../models/download_task.dart';
 import '../services/download_service.dart';
 import '../services/file_share_service.dart';
+import '../services/playback_service.dart';
 
 class VideoSwiperPage extends StatefulWidget {
   const VideoSwiperPage({super.key});
@@ -22,11 +23,13 @@ class _VideoSwiperPageState extends State<VideoSwiperPage>
   late PageController _pageController;
   late int _currentIndex;
   final DownloadService _downloadService = Get.find<DownloadService>();
+  final PlaybackService _playback = Get.find<PlaybackService>();
 
   final Map<int, VideoPlayerController> _videoControllerMap = {};
   final Map<int, ChewieController> _chewieControllerMap = {};
 
   final Map<int, Worker> _statusWatchers = {};
+  bool _leaveHandled = false;
 
   @override
   void initState() {
@@ -39,16 +42,15 @@ class _VideoSwiperPageState extends State<VideoSwiperPage>
         : 0;
 
     _pageController = PageController(initialPage: _currentIndex);
-
+    _playback.attachPage(() {});
     _initControllersAround(_currentIndex);
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _disposeAllControllers();
+    _handleLeavePage();
     _pageController.dispose();
-    // 清除 Rx 监听器
     for (var worker in _statusWatchers.values) {
       worker.dispose();
     }
@@ -78,15 +80,13 @@ class _VideoSwiperPageState extends State<VideoSwiperPage>
     final task = _downloadService.tasks[index];
     if (task.mediaType != DownloadMediaType.video) return null;
 
-    // 如果未完成，监听其变化，等完成后再初始化
     if (task.status != DownloadStatus.completed) {
       if (!_statusWatchers.containsKey(index)) {
         _statusWatchers[index] = ever(task.statusRx, (status) async {
-          // 页面已被释放，不再响应
           if (!mounted) return;
 
           if (status == DownloadStatus.completed) {
-            await _initControllerAt(index); // 会自动跳过重复初始化
+            await _initControllerAt(index);
             if (mounted) setState(() {});
           }
         });
@@ -94,17 +94,28 @@ class _VideoSwiperPageState extends State<VideoSwiperPage>
       return null;
     }
 
-    // 如果已经是完成状态，正常初始化 controller
     final filePath = task.filePath;
     if (filePath == null || filePath.isEmpty) return null;
 
     final file = File(filePath);
     if (!await file.exists()) return null;
 
-    final videoController = VideoPlayerController.file(file);
-    await videoController.initialize();
+    await _playback.stopOtherSessionIfNeeded(filePath);
 
-    videoController.setLooping(false);
+    VideoPlayerController? videoController =
+        _playback.claimControllerForPath(filePath);
+
+    if (videoController == null) {
+      videoController = VideoPlayerController.file(
+        file,
+        videoPlayerOptions: VideoPlayerOptions(
+          allowBackgroundPlayback: true,
+        ),
+      );
+      await videoController.initialize();
+      videoController.setLooping(false);
+    }
+
     videoController.addListener(_videoPlayerListener);
 
     final chewieController = ChewieController(
@@ -112,6 +123,20 @@ class _VideoSwiperPageState extends State<VideoSwiperPage>
       aspectRatio: videoController.value.aspectRatio,
       autoPlay: false,
       looping: false,
+      allowFullScreen: true,
+      allowPlaybackSpeedChanging: true,
+      deviceOrientationsOnEnterFullScreen: const [
+        DeviceOrientation.portraitUp,
+        DeviceOrientation.portraitDown,
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ],
+      deviceOrientationsAfterFullScreen: const [
+        DeviceOrientation.portraitUp,
+        DeviceOrientation.portraitDown,
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ],
     );
 
     _videoControllerMap[index] = videoController;
@@ -121,22 +146,24 @@ class _VideoSwiperPageState extends State<VideoSwiperPage>
   }
 
   Future<void> _initControllersAround(int index) async {
+    if (!mounted || _leaveHandled) return;
+
     final tasks = _downloadService.tasks;
 
-    // 初始化当前页、前一页、后一页
     for (int i = index - 1; i <= index + 1; i++) {
+      if (!mounted || _leaveHandled) return;
       if (i >= 0 && i < tasks.length) {
         await _initControllerAt(i);
       }
     }
 
-    // 移除其他页面 controller（仅保留最多 3 个）
     final keepIndexes = [index - 1, index, index + 1];
     final toRemove = _videoControllerMap.keys
         .where((k) => !keepIndexes.contains(k))
         .toList();
 
     for (final i in toRemove) {
+      if (!mounted || _leaveHandled) return;
       _videoControllerMap[i]?.removeListener(_videoPlayerListener);
       _videoControllerMap[i]?.dispose();
       _chewieControllerMap[i]?.dispose();
@@ -145,14 +172,23 @@ class _VideoSwiperPageState extends State<VideoSwiperPage>
       _chewieControllerMap.remove(i);
     }
 
-    _playOnly(index);
+    await _playOnly(index);
 
+    if (!mounted || _leaveHandled) return;
     setState(() {
       _currentIndex = index;
     });
   }
 
-  void _playOnly(int indexToPlay) {
+  Future<void> _playOnly(int indexToPlay) async {
+    if (indexToPlay >= 0 && indexToPlay < _downloadService.tasks.length) {
+      final task = _downloadService.tasks[indexToPlay];
+      final path = task.filePath;
+      if (path != null && path.isNotEmpty) {
+        await _playback.stopOtherSessionIfNeeded(path);
+      }
+    }
+
     _videoControllerMap.forEach((index, controller) {
       if (index == indexToPlay) {
         if (controller.value.isInitialized && !controller.value.isPlaying) {
@@ -178,6 +214,62 @@ class _VideoSwiperPageState extends State<VideoSwiperPage>
     _chewieControllerMap.clear();
   }
 
+  bool get _canTransferCurrentSession {
+    if (_currentIndex < 0 || _currentIndex >= _downloadService.tasks.length) {
+      return false;
+    }
+
+    final task = _downloadService.tasks[_currentIndex];
+    if (task.mediaType != DownloadMediaType.video) return false;
+    if (task.status != DownloadStatus.completed) return false;
+
+    final filePath = task.filePath;
+    if (filePath == null || filePath.isEmpty) return false;
+
+    return _videoControllerMap[_currentIndex] != null;
+  }
+
+  Future<void> _transferCurrentToBackground() async {
+    final controller = _videoControllerMap.remove(_currentIndex);
+    _chewieControllerMap.remove(_currentIndex)?.dispose();
+
+    final otherIndexes = _videoControllerMap.keys.toList();
+    for (final index in otherIndexes) {
+      _videoControllerMap[index]?.removeListener(_videoPlayerListener);
+      _videoControllerMap[index]?.dispose();
+      _chewieControllerMap[index]?.dispose();
+      _videoControllerMap.remove(index);
+      _chewieControllerMap.remove(index);
+    }
+
+    if (controller == null) return;
+
+    controller.removeListener(_videoPlayerListener);
+
+    final task = _downloadService.tasks[_currentIndex];
+    await _playback.receiveFromPageLeave(
+      controller: controller,
+      path: task.filePath!,
+      title: task.fileName ?? '视频',
+      mediaType: DownloadMediaType.video,
+    );
+  }
+
+  void _handleLeavePage() {
+    if (_leaveHandled) return;
+    _leaveHandled = true;
+
+    SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.dark);
+
+    if (_canTransferCurrentSession) {
+      _transferCurrentToBackground();
+      return;
+    }
+
+    _disposeAllControllers();
+    _playback.detachPage();
+  }
+
   bool get _isUserPoppingGesture {
     return ModalRoute.of(context)?.navigator?.userGestureInProgress ?? false;
   }
@@ -187,11 +279,7 @@ class _VideoSwiperPageState extends State<VideoSwiperPage>
     if (controller == null || !controller.value.isInitialized) return;
     if (_isUserPoppingGesture) return;
 
-    if (controller.value.isPlaying) {
-      _updateStatusBar(isDarkBackground: true);
-    } else {
-      _updateStatusBar(isDarkBackground: true);
-    }
+    _updateStatusBar(isDarkBackground: true);
   }
 
   void _updateStatusBar({required bool isDarkBackground}) {
@@ -222,150 +310,156 @@ class _VideoSwiperPageState extends State<VideoSwiperPage>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: Obx(() {
-        final tasks = _downloadService.tasks;
-        if (tasks.isEmpty) {
-          return const Center(child: Text('暂无视频'));
+    return PopScope(
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) {
+          _handleLeavePage();
         }
+      },
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        body: Obx(() {
+          final tasks = _downloadService.tasks;
+          if (tasks.isEmpty) {
+            return const Center(child: Text('暂无视频'));
+          }
 
-        return PageView.builder(
-          controller: _pageController,
-          scrollDirection: Axis.vertical,
-          itemCount: _downloadService.tasks.length,
-          onPageChanged: _onPageChanged,
-          itemBuilder: (context, index) {
-            final task = _downloadService.tasks[index];
+          return PageView.builder(
+            controller: _pageController,
+            scrollDirection: Axis.vertical,
+            itemCount: _downloadService.tasks.length,
+            onPageChanged: _onPageChanged,
+            itemBuilder: (context, index) {
+              final task = _downloadService.tasks[index];
 
-            if (task.status == DownloadStatus.completed) {
-              if (task.mediaType != DownloadMediaType.video) {
-                return SafeArea(
-                  child: Container(
-                    color: Colors.black,
-                    alignment: Alignment.center,
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.audiotrack,
-                          color: Colors.white70,
-                          size: 64,
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          task.fileName ?? '音频文件',
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 18,
+              if (task.status == DownloadStatus.completed) {
+                if (task.mediaType != DownloadMediaType.video) {
+                  return SafeArea(
+                    child: Container(
+                      color: Colors.black,
+                      alignment: Alignment.center,
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.audiotrack,
+                            color: Colors.white70,
+                            size: 64,
                           ),
-                        ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          '音频已下载，当前页面仅播放视频',
-                          style: TextStyle(color: Colors.white70),
-                        ),
-                        const SizedBox(height: 20),
-                        IconButton.filledTonal(
+                          const SizedBox(height: 16),
+                          Text(
+                            task.fileName ?? '音频文件',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            '音频已下载，当前页面仅播放视频',
+                            style: TextStyle(color: Colors.white70),
+                          ),
+                          const SizedBox(height: 20),
+                          IconButton.filledTonal(
+                            tooltip: '分享',
+                            onPressed: () => _shareTask(task),
+                            icon: const Icon(Icons.share),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }
+
+                final chewieController = _chewieControllerMap[index];
+                final filePath = task.filePath;
+
+                if (filePath == null || filePath.isEmpty) {
+                  return const Center(
+                    child: Text('文件路径不存在', style: TextStyle(color: Colors.red)),
+                  );
+                }
+
+                final file = File(filePath);
+                if (!file.existsSync()) {
+                  return const Center(
+                    child: Text('文件不存在', style: TextStyle(color: Colors.red)),
+                  );
+                }
+
+                if (chewieController == null) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                return SafeArea(
+                  child: Stack(
+                    alignment: Alignment.bottomCenter,
+                    children: [
+                      Chewie(controller: chewieController),
+                      Positioned(
+                        top: 12,
+                        right: 12,
+                        child: IconButton.filledTonal(
                           tooltip: '分享',
                           onPressed: () => _shareTask(task),
                           icon: const Icon(Icons.share),
                         ),
-                      ],
-                    ),
-                  ),
-                );
-              }
-
-              final chewieController = _chewieControllerMap[index];
-              final filePath = task.filePath;
-
-              if (filePath == null || filePath.isEmpty) {
-                return const Center(
-                  child: Text('文件路径不存在', style: TextStyle(color: Colors.red)),
-                );
-              }
-
-              final file = File(filePath);
-              if (!file.existsSync()) {
-                return const Center(
-                  child: Text('文件不存在', style: TextStyle(color: Colors.red)),
-                );
-              }
-
-              if (chewieController == null) {
-                return const Center(child: CircularProgressIndicator());
-              }
-
-              return SafeArea(
-                child: Stack(
-                  alignment: Alignment.bottomCenter,
-                  children: [
-                    Chewie(controller: chewieController),
-                    Positioned(
-                      top: 12,
-                      right: 12,
-                      child: IconButton.filledTonal(
-                        tooltip: '分享',
-                        onPressed: () => _shareTask(task),
-                        icon: const Icon(Icons.share),
                       ),
-                    ),
-                  ],
-                ),
-              );
-            } else {
-              // 非完成状态，显示下载状态与进度，并提供重试按钮
-              return SafeArea(
-                child: Container(
-                  color: Colors.black,
-                  alignment: Alignment.center,
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        '${task.fileName}',
-                        style:
-                            const TextStyle(color: Colors.white, fontSize: 20),
-                      ),
-                      Text(
-                        '状态：${task.status.name}',
-                        style:
-                            const TextStyle(color: Colors.white, fontSize: 20),
-                      ),
-                      if (task.status == DownloadStatus.downloading) ...[
-                        const SizedBox(height: 12),
-                        LinearProgressIndicator(value: task.progress),
-                        const SizedBox(height: 8),
-                        Text(
-                          '${(task.progress * 100).toStringAsFixed(1)}%',
-                          style: const TextStyle(
-                            color: Colors.blueAccent,
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                      const SizedBox(height: 20),
-                      if (task.status != DownloadStatus.downloading)
-                        ElevatedButton.icon(
-                          onPressed: () {
-                            _downloadService.retryDownload(task);
-                          },
-                          icon: const Icon(Icons.refresh),
-                          label: const Text('重新下载'),
-                        ),
                     ],
                   ),
-                ),
-              );
-            }
-          },
-        );
-      }),
+                );
+              } else {
+                return SafeArea(
+                  child: Container(
+                    color: Colors.black,
+                    alignment: Alignment.center,
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          '${task.fileName}',
+                          style: const TextStyle(
+                              color: Colors.white, fontSize: 20),
+                        ),
+                        Text(
+                          '状态：${task.status.name}',
+                          style: const TextStyle(
+                              color: Colors.white, fontSize: 20),
+                        ),
+                        if (task.status == DownloadStatus.downloading) ...[
+                          const SizedBox(height: 12),
+                          LinearProgressIndicator(value: task.progress),
+                          const SizedBox(height: 8),
+                          Text(
+                            '${(task.progress * 100).toStringAsFixed(1)}%',
+                            style: const TextStyle(
+                              color: Colors.blueAccent,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 20),
+                        if (task.status != DownloadStatus.downloading)
+                          ElevatedButton.icon(
+                            onPressed: () {
+                              _downloadService.retryDownload(task);
+                            },
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('重新下载'),
+                          ),
+                      ],
+                    ),
+                  ),
+                );
+              }
+            },
+          );
+        }),
+      ),
     );
   }
 }

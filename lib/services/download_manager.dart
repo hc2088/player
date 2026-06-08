@@ -4,6 +4,7 @@ import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
 import 'package:ffmpeg_kit_flutter_new/ffmpeg_session.dart';
 import 'package:ffmpeg_kit_flutter_new/ffprobe_kit.dart';
 import 'package:ffmpeg_kit_flutter_new/return_code.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
@@ -98,6 +99,18 @@ class DownloadManager {
       fileName = fileName.substring(0, maxNameLength);
     }
 
+    final safeId = task.id.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
+    final shortId =
+        safeId.length > 8 ? safeId.substring(safeId.length - 8) : safeId;
+    final uniqueSuffix = '_$shortId';
+    final uniqueMaxNameLength = maxNameLength - uniqueSuffix.length;
+    if (uniqueMaxNameLength > 0) {
+      if (fileName.length > uniqueMaxNameLength) {
+        fileName = fileName.substring(0, uniqueMaxNameLength);
+      }
+      fileName += uniqueSuffix;
+    }
+
     // 添加后缀
     fileName += suffix;
 
@@ -151,6 +164,12 @@ class DownloadManager {
     DownloadTask task,
     Function(double) onProgress,
   ) async {
+    if (!isDownloadableUrl(task.url)) {
+      debugPrint('[Download] 不支持下载页面内临时地址: ${task.url}');
+      onProgress(-1.0);
+      return;
+    }
+
     if (task.mediaType == DownloadMediaType.audio) {
       await _downloadDirectFile(task, onProgress);
       return;
@@ -175,7 +194,7 @@ class DownloadManager {
       arguments,
       (session) async {
         final returnCode = await session.getReturnCode();
-        _activeSessions.remove(task.url);
+        _activeSessions.remove(task.id);
 
         if (ReturnCode.isSuccess(returnCode)) {
           print('[Download] FFmpeg 成功: $filePath');
@@ -197,7 +216,7 @@ class DownloadManager {
     );
 
     final session = await sessionFuture;
-    _activeSessions[task.url] = session;
+    _activeSessions[task.id] = session;
     print('[Download] FFmpeg session 存储完成');
   }
 
@@ -225,7 +244,7 @@ class DownloadManager {
 
     final client = HttpClient();
     IOSink? sink;
-    _activeHttpClients[task.url] = client;
+    _activeHttpClients[task.id] = client;
 
     try {
       final request = await client.getUrl(uri);
@@ -265,7 +284,7 @@ class DownloadManager {
       }
       onProgress(-1.0);
     } finally {
-      _activeHttpClients.remove(task.url);
+      _activeHttpClients.remove(task.id);
       client.close(force: true);
     }
   }
@@ -362,15 +381,23 @@ class DownloadManager {
   }
 
   static Future<void> cancel(DownloadTask task) async {
-    final session = _activeSessions[task.url];
+    final session = _activeSessions[task.id];
     if (session != null) {
       print('[FFmpegCancel] 取消任务：${task.url}');
       await session.cancel();
-      _activeSessions.remove(task.url);
+      _activeSessions.remove(task.id);
     }
 
-    final client = _activeHttpClients.remove(task.url);
+    final client = _activeHttpClients.remove(task.id);
     client?.close(force: true);
+  }
+
+  static bool isDownloadableUrl(String url) {
+    final uri = Uri.tryParse(url.trim());
+    if (uri == null || !uri.hasScheme) return false;
+
+    final scheme = uri.scheme.toLowerCase();
+    return scheme == 'http' || scheme == 'https';
   }
 
   static const String _userAgent =
