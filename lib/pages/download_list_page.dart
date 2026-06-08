@@ -7,6 +7,7 @@ import 'package:get/get.dart';
 
 import '../models/download_task.dart';
 import '../services/download_service.dart';
+import '../services/playback_service.dart';
 import '../routes/route_helper.dart';
 
 class DownloadListPage extends StatefulWidget {
@@ -18,6 +19,7 @@ class DownloadListPage extends StatefulWidget {
 
 class _DownloadListPageState extends State<DownloadListPage> {
   final DownloadService _downloadService = Get.find<DownloadService>();
+  final PlaybackService _playbackService = Get.find<PlaybackService>();
 
   static const double _cardRadius = 8;
 
@@ -125,8 +127,23 @@ class _DownloadListPageState extends State<DownloadListPage> {
     }
   }
 
+  String _progressText(DownloadTask task) {
+    final progress = task.status == DownloadStatus.completed
+        ? 1.0
+        : task.progress.clamp(0.0, 0.999);
+    return '${(progress * 100).toStringAsFixed(1)}%';
+  }
+
   void _openTask(DownloadTask task, int index) {
     if (task.mediaType == DownloadMediaType.video) {
+      final filePath = task.filePath;
+      if (filePath != null &&
+          filePath.isNotEmpty &&
+          _playbackService.isSameSession(filePath)) {
+        _playbackService.openFullPlayer();
+        return;
+      }
+
       Get.toNamed(RouteHelper.videoSwiper, arguments: {'initialIndex': index});
       return;
     }
@@ -339,7 +356,7 @@ class _DownloadListPageState extends State<DownloadListPage> {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  '${(task.progress * 100).toStringAsFixed(1)}%',
+                  _progressText(task),
                   style: const TextStyle(
                     color: Colors.blueAccent,
                     fontSize: 12,
@@ -377,6 +394,13 @@ class _DownloadListPageState extends State<DownloadListPage> {
               tooltip: '重新下载',
               icon: const Icon(Icons.refresh, color: Colors.orange),
               onPressed: () => _downloadService.retryDownload(task),
+            ),
+          if (task.status == DownloadStatus.downloading)
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              tooltip: '强制重新下载',
+              icon: const Icon(Icons.restart_alt, color: Colors.orange),
+              onPressed: () => _downloadService.forceRetryDownload(task),
             ),
           IconButton(
             visualDensity: VisualDensity.compact,

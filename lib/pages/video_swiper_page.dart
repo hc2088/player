@@ -434,7 +434,7 @@ class _VideoSwiperPageState extends State<VideoSwiperPage>
                           LinearProgressIndicator(value: task.progress),
                           const SizedBox(height: 8),
                           Text(
-                            '${(task.progress * 100).toStringAsFixed(1)}%',
+                            '${(task.progress.clamp(0.0, 0.999) * 100).toStringAsFixed(1)}%',
                             style: const TextStyle(
                               color: Colors.blueAccent,
                               fontSize: 18,
@@ -443,7 +443,15 @@ class _VideoSwiperPageState extends State<VideoSwiperPage>
                           ),
                         ],
                         const SizedBox(height: 20),
-                        if (task.status != DownloadStatus.downloading)
+                        if (task.status == DownloadStatus.downloading)
+                          ElevatedButton.icon(
+                            onPressed: () {
+                              _downloadService.forceRetryDownload(task);
+                            },
+                            icon: const Icon(Icons.restart_alt),
+                            label: const Text('强制重新下载'),
+                          )
+                        else
                           ElevatedButton.icon(
                             onPressed: () {
                               _downloadService.retryDownload(task);

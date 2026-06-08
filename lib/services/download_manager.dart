@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
@@ -14,6 +15,7 @@ import '../models/download_task.dart';
 class DownloadManager {
   static final Map<String, FFmpegSession> _activeSessions = {};
   static final Map<String, HttpClient> _activeHttpClients = {};
+  static const Duration _networkIdleTimeout = Duration(seconds: 90);
 
   static Future<String> _getDownloadDir() async {
     final dir = await getApplicationDocumentsDirectory();
@@ -37,23 +39,27 @@ class DownloadManager {
   }
 
   static Future<double?> _getDuration(DownloadTask task) async {
-    final session = await FFprobeKit.getMediaInformationFromCommandArguments([
-      '-v',
-      'error',
-      '-hide_banner',
-      '-print_format',
-      'json',
-      '-show_format',
-      '-show_streams',
-      '-show_chapters',
-      ...await _inputArgumentsForTask(task),
-      '-i',
-      task.url,
-    ]);
-    final info = session.getMediaInformation();
-    final durationStr = info?.getDuration();
-    if (durationStr != null) {
-      return double.tryParse(durationStr);
+    try {
+      final session = await FFprobeKit.getMediaInformationFromCommandArguments([
+        '-v',
+        'error',
+        '-hide_banner',
+        '-print_format',
+        'json',
+        '-show_format',
+        '-show_streams',
+        '-show_chapters',
+        ...await _inputArgumentsForTask(task),
+        '-i',
+        task.url,
+      ]).timeout(_networkIdleTimeout);
+      final info = session.getMediaInformation();
+      final durationStr = info?.getDuration();
+      if (durationStr != null) {
+        return double.tryParse(durationStr);
+      }
+    } catch (e) {
+      debugPrint('[Download] 获取视频时长超时或失败: $e');
     }
     return null;
   }
@@ -162,8 +168,11 @@ class DownloadManager {
 
   static Future<void> download(
     DownloadTask task,
-    Function(double) onProgress,
-  ) async {
+    Function(double) onProgress, {
+    bool Function()? shouldContinue,
+  }) async {
+    if (shouldContinue?.call() == false) return;
+
     if (!isDownloadableUrl(task.url)) {
       debugPrint('[Download] 不支持下载页面内临时地址: ${task.url}');
       onProgress(-1.0);
@@ -171,11 +180,13 @@ class DownloadManager {
     }
 
     if (task.mediaType == DownloadMediaType.audio) {
-      await _downloadDirectFile(task, onProgress);
+      await _downloadDirectFile(task, onProgress, shouldContinue);
       return;
     }
 
     final duration = await _getDuration(task);
+    if (shouldContinue?.call() == false) return;
+
     print('[Download] 获取视频时长: $duration 秒');
 
     final filePath = task.filePath;
@@ -208,7 +219,7 @@ class DownloadManager {
       (statistics) {
         final time = statistics.getTime();
         if (duration != null && duration > 0) {
-          final progress = (time / (duration * 1000)).clamp(0.0, 1.0);
+          final progress = (time / (duration * 1000)).clamp(0.0, 0.999);
           print('[Download] 实时进度: ${(progress * 100).toStringAsFixed(2)}%');
           onProgress(progress);
         }
@@ -223,7 +234,10 @@ class DownloadManager {
   static Future<void> _downloadDirectFile(
     DownloadTask task,
     Function(double) onProgress,
+    bool Function()? shouldContinue,
   ) async {
+    if (shouldContinue?.call() == false) return;
+
     final filePath = task.filePath;
     if (filePath == null || filePath.isEmpty) {
       onProgress(-1.0);
@@ -243,6 +257,7 @@ class DownloadManager {
     }
 
     final client = HttpClient();
+    client.connectionTimeout = _networkIdleTimeout;
     IOSink? sink;
     _activeHttpClients[task.id] = client;
 
@@ -251,7 +266,7 @@ class DownloadManager {
       final headers = await _httpHeadersForTask(task);
       headers.forEach(request.headers.set);
 
-      final response = await request.close();
+      final response = await request.close().timeout(_networkIdleTimeout);
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw HttpException(
           'HTTP ${response.statusCode}',
@@ -263,12 +278,14 @@ class DownloadManager {
       final totalBytes = response.contentLength;
       var receivedBytes = 0;
 
-      await for (final chunk in response) {
+      await for (final chunk in response.timeout(_networkIdleTimeout)) {
+        if (shouldContinue?.call() == false) return;
+
         receivedBytes += chunk.length;
         sink.add(chunk);
 
         if (totalBytes > 0) {
-          onProgress((receivedBytes / totalBytes).clamp(0.0, 1.0));
+          onProgress((receivedBytes / totalBytes).clamp(0.0, 0.999));
         }
       }
 
@@ -293,6 +310,8 @@ class DownloadManager {
     final args = <String>[
       '-user_agent',
       _userAgent,
+      '-rw_timeout',
+      _networkIdleTimeout.inMicroseconds.toString(),
       '-protocol_whitelist',
       'file,http,https,tcp,tls,crypto',
       '-allowed_extensions',
