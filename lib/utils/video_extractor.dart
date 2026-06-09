@@ -53,15 +53,15 @@ class VideoExtractor {
     String? pageTitle,
   }) async {
     final uri = pageUrl == null ? null : Uri.tryParse(pageUrl);
-    final pid = _extractHaijiaoPid(uri);
+    final pid = _extractTargetSitePid(uri);
     if (uri != null && pid != null) {
-      final haijiaoItems = await _extractHaijiaoMediaUrls(
+      final targetSiteItems = await _extractTargetSiteMediaUrls(
         pageUri: uri,
         pid: pid,
         pageTitle: pageTitle,
       );
-      if (haijiaoItems.isNotEmpty) {
-        return _dedupe(haijiaoItems);
+      if (targetSiteItems.isNotEmpty) {
+        return _dedupe(targetSiteItems);
       }
     }
 
@@ -69,13 +69,13 @@ class VideoExtractor {
     return _dedupe(items);
   }
 
-  static Future<String?> refreshHaijiaoMediaUrl({
+  static Future<String?> refreshTargetSiteMediaUrl({
     required String pageUrl,
     required int attachmentId,
     required ExtractedMediaType type,
   }) async {
     final pageUri = Uri.tryParse(pageUrl);
-    final pid = _extractHaijiaoPid(pageUri);
+    final pid = _extractTargetSitePid(pageUri);
     if (pageUri == null || pid == null) return null;
 
     try {
@@ -97,7 +97,7 @@ class VideoExtractor {
       }
     } catch (_) {}
 
-    final lines = await _extractHaijiaoAttachmentLines(
+    final lines = await _extractTargetSiteAttachmentLines(
       pageUri: pageUri,
       pid: pid,
       attachmentId: attachmentId,
@@ -204,7 +204,7 @@ class VideoExtractor {
     return decoded;
   }
 
-  static String? _extractHaijiaoPid(Uri? uri) {
+  static String? _extractTargetSitePid(Uri? uri) {
     if (uri == null) return null;
     if (!uri.path.contains('/post/details')) return null;
 
@@ -215,7 +215,7 @@ class VideoExtractor {
     return match?.group(1);
   }
 
-  static Future<List<ExtractedMediaUrl>> _extractHaijiaoMediaUrls({
+  static Future<List<ExtractedMediaUrl>> _extractTargetSiteMediaUrls({
     required Uri pageUri,
     required String pid,
     String? pageTitle,
@@ -229,7 +229,7 @@ class VideoExtractor {
 
       final title = _nonEmptyString(topic['title']) ??
           _nonEmptyString(pageTitle) ??
-          'haijiao_$pid';
+          'target_site_$pid';
       final attachments = topic['attachments'];
       if (attachments is! List) return items;
 
@@ -251,7 +251,7 @@ class VideoExtractor {
         }
 
         if (attachmentId != null) {
-          urls.addAll(await _extractHaijiaoAttachmentLines(
+          urls.addAll(await _extractTargetSiteAttachmentLines(
             pageUri: pageUri,
             pid: pid,
             attachmentId: attachmentId,
@@ -273,13 +273,13 @@ class VideoExtractor {
         }
       }
     } catch (e) {
-      print('海角媒体提取失败: $e');
+      print('目标站点媒体提取失败: $e');
     }
 
     return items;
   }
 
-  static Future<List<_ResolvedMediaLine>> _extractHaijiaoAttachmentLines({
+  static Future<List<_ResolvedMediaLine>> _extractTargetSiteAttachmentLines({
     required Uri pageUri,
     required String pid,
     required int attachmentId,
@@ -292,7 +292,7 @@ class VideoExtractor {
       final data = await _getDecodedApiData(uri, pageUri);
       lines.addAll(_extractMediaLinesFromData(data, type));
     } catch (e) {
-      print('海角附件线路 GET 提取失败: $e');
+      print('目标站点附件线路 GET 提取失败: $e');
     }
 
     try {
@@ -310,7 +310,7 @@ class VideoExtractor {
       );
       lines.addAll(_extractMediaLinesFromData(data, type));
     } catch (e) {
-      print('海角附件线路 POST 提取失败: $e');
+      print('目标站点附件线路 POST 提取失败: $e');
     }
 
     return lines;

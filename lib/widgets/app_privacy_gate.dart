@@ -102,7 +102,7 @@ class _AppPrivacyGateState extends State<AppPrivacyGate>
           ),
         ),
         if (!_unlocked)
-          _HelloWorldLockPage(
+          _PrivacyLockOverlay(
             enteringPassword: _enteringPassword,
             passwordController: _passwordController,
             passwordFocusNode: _passwordFocusNode,
@@ -110,6 +110,43 @@ class _AppPrivacyGateState extends State<AppPrivacyGate>
             onCancel: _hidePasswordInput,
             onSubmit: _submitPassword,
           ),
+      ],
+    );
+  }
+}
+
+class _PrivacyLockOverlay extends StatelessWidget {
+  const _PrivacyLockOverlay({
+    required this.enteringPassword,
+    required this.passwordController,
+    required this.passwordFocusNode,
+    required this.onShowPasswordInput,
+    required this.onCancel,
+    required this.onSubmit,
+  });
+
+  final bool enteringPassword;
+  final TextEditingController passwordController;
+  final FocusNode passwordFocusNode;
+  final VoidCallback onShowPasswordInput;
+  final VoidCallback onCancel;
+  final VoidCallback onSubmit;
+
+  @override
+  Widget build(BuildContext context) {
+    return Overlay(
+      key: ValueKey(enteringPassword),
+      initialEntries: [
+        OverlayEntry(
+          builder: (_) => _HelloWorldLockPage(
+            enteringPassword: enteringPassword,
+            passwordController: passwordController,
+            passwordFocusNode: passwordFocusNode,
+            onShowPasswordInput: onShowPasswordInput,
+            onCancel: onCancel,
+            onSubmit: onSubmit,
+          ),
+        ),
       ],
     );
   }

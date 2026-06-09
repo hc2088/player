@@ -21,7 +21,7 @@
 
 - **网页音视频提取**
   - 支持扫描页面中的 `video`、`audio`、`source` 和资源加载记录。
-  - 支持海角详情页接口解析，识别 `attachments` 中的音频和视频。
+  - 支持目标站点详情页接口解析，识别 `attachments` 中的音频和视频。
   - 一个页面中存在多个音频时，会全部识别并分别加入下载任务。
   - 提取流程见 [docs/media_download_flow.md](docs/media_download_flow.md)。
 

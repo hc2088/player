@@ -402,7 +402,7 @@ class DownloadService extends GetxController {
     final type = task.mediaType == DownloadMediaType.audio
         ? ExtractedMediaType.audio
         : ExtractedMediaType.video;
-    final resolvedUrl = await VideoExtractor.refreshHaijiaoMediaUrl(
+    final resolvedUrl = await VideoExtractor.refreshTargetSiteMediaUrl(
       pageUrl: task.originPageUrl,
       attachmentId: attachmentId,
       type: type,
