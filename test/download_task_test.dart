@@ -9,12 +9,14 @@ void main() {
       originPageUrl: 'https://example.com/post',
       sourceAttachmentId: 123,
       status: DownloadStatus.pending,
+      failureReason: 'HTTP 403',
     );
 
     final restored = DownloadTask.fromJson(task.toJson());
 
     expect(restored.id, 'download_1');
     expect(restored.sourceAttachmentId, 123);
+    expect(restored.failureReason, 'HTTP 403');
   });
 
   test('DownloadTask creates id for old stored tasks', () {

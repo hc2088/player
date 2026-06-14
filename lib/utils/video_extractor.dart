@@ -79,6 +79,18 @@ class VideoExtractor {
     final pid = _extractTargetSitePid(pageUri);
     if (pageUri == null || pid == null) return null;
 
+    final lines = await _extractTargetSiteAttachmentLines(
+      pageUri: pageUri,
+      pid: pid,
+      attachmentId: attachmentId,
+      type: type,
+    );
+
+    for (final line in lines) {
+      final resolvedUrl = _resolveUrl(pageUri, line.url);
+      if (resolvedUrl != null) return resolvedUrl;
+    }
+
     try {
       final topicUri = _sameOriginUri(pageUri, '/api/topic/$pid');
       final topic = await _getDecodedApiData(topicUri, pageUri);
@@ -97,18 +109,6 @@ class VideoExtractor {
         }
       }
     } catch (_) {}
-
-    final lines = await _extractTargetSiteAttachmentLines(
-      pageUri: pageUri,
-      pid: pid,
-      attachmentId: attachmentId,
-      type: type,
-    );
-
-    for (final line in lines) {
-      final resolvedUrl = _resolveUrl(pageUri, line.url);
-      if (resolvedUrl != null) return resolvedUrl;
-    }
 
     return null;
   }
@@ -279,10 +279,6 @@ class VideoExtractor {
 
         final attachmentId = _intValue(rawAttachment['id']);
         final urls = <_ResolvedMediaLine>[];
-        final remoteUrl = _nonEmptyString(rawAttachment['remoteUrl']);
-        if (remoteUrl != null && _looksLikeMediaUrl(remoteUrl, type)) {
-          urls.add(_ResolvedMediaLine(url: remoteUrl));
-        }
 
         if (attachmentId != null) {
           urls.addAll(await _extractTargetSiteAttachmentLines(
@@ -291,6 +287,13 @@ class VideoExtractor {
             attachmentId: attachmentId,
             type: type,
           ));
+        }
+
+        final remoteUrl = _nonEmptyString(rawAttachment['remoteUrl']);
+        if (urls.isEmpty &&
+            remoteUrl != null &&
+            _looksLikeMediaUrl(remoteUrl, type)) {
+          urls.add(_ResolvedMediaLine(url: remoteUrl));
         }
 
         for (final line in urls) {

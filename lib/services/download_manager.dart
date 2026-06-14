@@ -14,6 +14,19 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import '../models/download_task.dart';
 
+class DownloadProgress {
+  const DownloadProgress(this.progress, {this.failureReason});
+
+  const DownloadProgress.failed(String reason)
+      : progress = -1.0,
+        failureReason = reason;
+
+  final double progress;
+  final String? failureReason;
+
+  bool get isFailure => progress < 0;
+}
+
 class DownloadManager {
   static final Map<String, FFmpegSession> _activeSessions = {};
   static final Map<String, HttpClient> _activeHttpClients = {};
@@ -188,14 +201,15 @@ class DownloadManager {
 
   static Future<void> download(
     DownloadTask task,
-    Function(double) onProgress, {
+    Function(DownloadProgress) onProgress, {
     bool Function()? shouldContinue,
   }) async {
     if (shouldContinue?.call() == false) return;
 
     if (!isDownloadableUrl(task.url)) {
-      debugPrint('[Download] 不支持下载页面内临时地址: ${task.url}');
-      onProgress(-1.0);
+      const reason = '不支持下载页面内临时地址';
+      debugPrint('[Download] $reason: ${task.url}');
+      onProgress(const DownloadProgress.failed(reason));
       return;
     }
 
@@ -209,12 +223,17 @@ class DownloadManager {
       return;
     }
 
-    final duration = await _getDuration(task);
+    var duration = _shouldProbeDuration(task) ? await _getDuration(task) : null;
     if (shouldContinue?.call() == false) return;
 
     print('[Download] 获取视频时长: $duration 秒');
 
     final filePath = task.filePath;
+    if (filePath == null || filePath.isEmpty) {
+      onProgress(const DownloadProgress.failed('本地保存路径为空'));
+      return;
+    }
+
     final arguments = [
       '-y',
       ...await _inputArgumentsForTask(task),
@@ -222,56 +241,109 @@ class DownloadManager {
       task.url,
       '-c',
       'copy',
-      filePath ?? '',
+      filePath,
     ];
     print('[Download] 执行命令: ${arguments.join(' ')}');
 
-    final sessionFuture = FFmpegKit.executeWithArgumentsAsync(
-      arguments,
-      (session) async {
-        final returnCode = await session.getReturnCode();
-        _activeSessions.remove(task.id);
+    try {
+      final ffmpegLogs = <String>[];
+      var nextLogMayBeDuration = false;
+      final sessionFuture = FFmpegKit.executeWithArgumentsAsync(
+        arguments,
+        (session) async {
+          final returnCode = await session.getReturnCode();
+          _activeSessions.remove(task.id);
 
-        if (ReturnCode.isSuccess(returnCode)) {
-          print('[Download] FFmpeg 成功: $filePath');
-          onProgress(1.0);
-        } else {
-          print('[Download] FFmpeg 失败，code=$returnCode');
-          onProgress(-1.0);
-        }
-      },
-      (log) => print('[FFmpegLog] ${log.getMessage()}'),
-      (statistics) {
-        final time = statistics.getTime();
-        if (duration != null && duration > 0) {
-          final progress = (time / (duration * 1000)).clamp(0.0, 0.999);
-          print('[Download] 实时进度: ${(progress * 100).toStringAsFixed(2)}%');
-          onProgress(progress);
-        }
-      },
-    );
+          if (ReturnCode.isSuccess(returnCode)) {
+            print('[Download] FFmpeg 成功: $filePath');
+            onProgress(const DownloadProgress(1.0));
+          } else {
+            final reason = await _ffmpegFailureReason(
+              session,
+              returnCode,
+              liveLogs: ffmpegLogs,
+            );
+            debugPrint('[Download] FFmpeg 失败: $reason');
+            onProgress(DownloadProgress.failed(reason));
+          }
+        },
+        (log) {
+          final message = log.getMessage();
+          ffmpegLogs.add(message);
+          final parsedDuration = _parseDurationFromLog(
+            message,
+            acceptStandalone: nextLogMayBeDuration,
+          );
+          if (parsedDuration != null) {
+            duration = parsedDuration;
+            nextLogMayBeDuration = false;
+          } else {
+            nextLogMayBeDuration = message.contains('Duration:');
+          }
+          print('[FFmpegLog] $message');
+        },
+        (statistics) {
+          final time = statistics.getTime();
+          final currentDuration = duration;
+          if (currentDuration != null && currentDuration > 0) {
+            final progress =
+                (time / (currentDuration * 1000)).clamp(0.0, 0.999);
+            print('[Download] 实时进度: ${(progress * 100).toStringAsFixed(2)}%');
+            onProgress(DownloadProgress(progress));
+          }
+        },
+      );
 
-    final session = await sessionFuture;
-    _activeSessions[task.id] = session;
-    print('[Download] FFmpeg session 存储完成');
+      final session = await sessionFuture;
+      _activeSessions[task.id] = session;
+      print('[Download] FFmpeg session 存储完成');
+    } catch (e) {
+      final reason = _downloadExceptionReason(e);
+      debugPrint('[Download] FFmpeg 启动失败: $reason');
+      onProgress(DownloadProgress.failed(reason));
+    }
+  }
+
+  static bool _shouldProbeDuration(DownloadTask task) {
+    final uri = Uri.tryParse(task.url);
+    final lowerPath = (uri?.path ?? task.url).toLowerCase();
+    return !lowerPath.endsWith('.m3u8') && !lowerPath.contains('/m3u8');
+  }
+
+  static double? _parseDurationFromLog(
+    String message, {
+    required bool acceptStandalone,
+  }) {
+    final text = message.trim();
+    final pattern = acceptStandalone
+        ? RegExp(r'^(\d{2}):(\d{2}):(\d{2}(?:\.\d+)?)$')
+        : RegExp(r'Duration:\s*(\d{2}):(\d{2}):(\d{2}(?:\.\d+)?)');
+    final match = pattern.firstMatch(text);
+    if (match == null) return null;
+
+    final hours = int.tryParse(match.group(1) ?? '');
+    final minutes = int.tryParse(match.group(2) ?? '');
+    final seconds = double.tryParse(match.group(3) ?? '');
+    if (hours == null || minutes == null || seconds == null) return null;
+    return (hours * 3600) + (minutes * 60) + seconds;
   }
 
   static Future<void> _downloadDirectFile(
     DownloadTask task,
-    Function(double) onProgress,
+    Function(DownloadProgress) onProgress,
     bool Function()? shouldContinue,
   ) async {
     if (shouldContinue?.call() == false) return;
 
     final filePath = task.filePath;
     if (filePath == null || filePath.isEmpty) {
-      onProgress(-1.0);
+      onProgress(const DownloadProgress.failed('本地保存路径为空'));
       return;
     }
 
     final uri = Uri.tryParse(task.url);
     if (uri == null) {
-      onProgress(-1.0);
+      onProgress(const DownloadProgress.failed('下载链接格式无效'));
       return;
     }
 
@@ -310,21 +382,24 @@ class DownloadManager {
         sink.add(chunk);
 
         if (totalBytes > 0) {
-          onProgress((receivedBytes / totalBytes).clamp(0.0, 0.999));
+          onProgress(
+            DownloadProgress((receivedBytes / totalBytes).clamp(0.0, 0.999)),
+          );
         }
       }
 
       await sink.flush();
       await sink.close();
       sink = null;
-      onProgress(1.0);
+      onProgress(const DownloadProgress(1.0));
     } catch (e) {
-      print('[Download] 直连文件下载失败: $e');
+      final reason = _downloadExceptionReason(e);
+      debugPrint('[Download] 直连文件下载失败: $reason');
       await sink?.close();
       if (await outputFile.exists()) {
         await outputFile.delete();
       }
-      onProgress(-1.0);
+      onProgress(DownloadProgress.failed(reason));
     } finally {
       _activeHttpClients.remove(task.id);
       client.close(force: true);
@@ -333,20 +408,20 @@ class DownloadManager {
 
   static Future<void> _downloadImageFile(
     DownloadTask task,
-    Function(double) onProgress,
+    Function(DownloadProgress) onProgress,
     bool Function()? shouldContinue,
   ) async {
     if (shouldContinue?.call() == false) return;
 
     final filePath = task.filePath;
     if (filePath == null || filePath.isEmpty) {
-      onProgress(-1.0);
+      onProgress(const DownloadProgress.failed('本地保存路径为空'));
       return;
     }
 
     final uri = Uri.tryParse(task.url);
     if (uri == null) {
-      onProgress(-1.0);
+      onProgress(const DownloadProgress.failed('下载链接格式无效'));
       return;
     }
 
@@ -384,7 +459,9 @@ class DownloadManager {
         builder.add(chunk);
 
         if (totalBytes > 0) {
-          onProgress((receivedBytes / totalBytes).clamp(0.0, 0.999));
+          onProgress(
+            DownloadProgress((receivedBytes / totalBytes).clamp(0.0, 0.999)),
+          );
         }
       }
 
@@ -392,13 +469,14 @@ class DownloadManager {
 
       final imageBytes = _decodeDownloadedImageBytes(builder.takeBytes());
       await outputFile.writeAsBytes(imageBytes, flush: true);
-      onProgress(1.0);
+      onProgress(const DownloadProgress(1.0));
     } catch (e) {
-      debugPrint('[Download] 图片下载失败: $e');
+      final reason = _downloadExceptionReason(e);
+      debugPrint('[Download] 图片下载失败: $reason');
       if (await outputFile.exists()) {
         await outputFile.delete();
       }
-      onProgress(-1.0);
+      onProgress(DownloadProgress.failed(reason));
     } finally {
       _activeHttpClients.remove(task.id);
       client.close(force: true);
@@ -658,6 +736,101 @@ class DownloadManager {
 
     final port = uri.hasPort ? ':${uri.port}' : '';
     return '${uri.scheme}://${uri.host}$port';
+  }
+
+  static Future<String> _ffmpegFailureReason(
+      FFmpegSession session, ReturnCode? returnCode,
+      {List<String> liveLogs = const []}) async {
+    final parts = <String>[];
+
+    if (ReturnCode.isCancel(returnCode)) {
+      parts.add('FFmpeg 任务被取消');
+    } else {
+      parts.add('FFmpeg 退出码 ${returnCode?.getValue() ?? '未知'}');
+    }
+
+    final failStackTrace = await _safeString(session.getFailStackTrace);
+    if (failStackTrace != null && failStackTrace.trim().isNotEmpty) {
+      parts.add(_compactLogText(failStackTrace));
+    }
+
+    if (liveLogs.isNotEmpty) {
+      parts.add(_lastUsefulLines(liveLogs.join('\n')));
+    }
+
+    final output = await _safeString(session.getOutput);
+    if (output != null && output.trim().isNotEmpty) {
+      parts.add(_lastUsefulLines(output));
+    }
+
+    return parts.where((part) => part.trim().isNotEmpty).join('：').trim();
+  }
+
+  static Future<String?> _safeString(Future<String?> Function() read) async {
+    try {
+      return await read();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static String _downloadExceptionReason(Object error) {
+    if (error is TimeoutException) {
+      return '网络超时，${_networkIdleTimeout.inSeconds} 秒内没有响应';
+    }
+
+    if (error is HttpException) {
+      final uri = error.uri;
+      final target = uri == null ? '' : '，地址：$uri';
+      return '${error.message}$target';
+    }
+
+    if (error is FormatException) {
+      return error.message;
+    }
+
+    final text = error.toString().trim();
+    if (text.isEmpty) return '未知下载错误';
+    return _compactLogText(text);
+  }
+
+  static String _lastUsefulLines(String text) {
+    final lines = text
+        .split(RegExp(r'\r?\n'))
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty)
+        .toList();
+    if (lines.isEmpty) return '';
+
+    final usefulLines = lines
+        .where((line) =>
+            line.contains('Error') ||
+            line.contains('error') ||
+            line.contains('Invalid') ||
+            line.contains('HTTP') ||
+            line.contains('403') ||
+            line.contains('404') ||
+            line.contains('Not Found') ||
+            line.contains('Unable') ||
+            line.contains('key file') ||
+            line.contains('segment') ||
+            line.contains('processing input') ||
+            line.contains('timed out') ||
+            line.contains('Failed') ||
+            line.contains('failed'))
+        .toList();
+    final selected = usefulLines.isNotEmpty
+        ? usefulLines.skip(usefulLines.length > 4 ? usefulLines.length - 4 : 0)
+        : lines.skip(lines.length > 4 ? lines.length - 4 : 0);
+
+    return _compactLogText(selected.join(' | '));
+  }
+
+  static String _compactLogText(String text) {
+    final compact = text.replaceAll(RegExp(r'\s+'), ' ').trim();
+    const maxLength = 260;
+    if (compact.length <= maxLength) return compact;
+    return '...${compact.substring(compact.length - maxLength)}';
   }
 
   static Future<void> cancel(DownloadTask task) async {

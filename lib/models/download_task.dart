@@ -12,6 +12,7 @@ class DownloadTask {
   String? fileName;
   DownloadMediaType mediaType;
   double progress;
+  String? failureReason;
 
   Rx<DownloadStatus> statusRx;
 
@@ -34,6 +35,7 @@ class DownloadTask {
     this.mediaType = DownloadMediaType.video,
     this.fileName,
     this.progress = 0.0,
+    this.failureReason,
     this.session,
     this.thumbnailPath,
     this.filePath,
@@ -49,6 +51,7 @@ class DownloadTask {
       sourceAttachmentId: _intFromJson(json['sourceAttachmentId']),
       fileName: json['fileName'],
       progress: (json['progress'] as num).toDouble(),
+      failureReason: json['failureReason']?.toString(),
       status: DownloadStatus.values[json['status']],
       mediaType: mediaTypeIndex is int &&
               mediaTypeIndex >= 0 &&
@@ -69,6 +72,7 @@ class DownloadTask {
       'fileName': fileName,
       'mediaType': mediaType.index,
       'progress': progress,
+      'failureReason': failureReason,
       'status': status.index,
       'thumbnailPath': thumbnailPath,
       'filePath': filePath,

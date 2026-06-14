@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:path/path.dart' as p;
+import 'package:wakelock_plus/wakelock_plus.dart';
 import '../models/download_task.dart';
 import '../utils/video_extractor.dart';
 import 'download_manager.dart';
@@ -22,6 +23,8 @@ class DownloadService extends GetxController {
   final Map<String, DateTime> _lastDownloadActivityAt = {};
   final Map<String, int> _lastObservedFileBytes = {};
   final Map<String, int> _downloadGenerations = {};
+  bool _downloadWakelockEnabled = false;
+  Future<void> _wakelockOperation = Future.value();
 
   @override
   void onInit() async {
@@ -36,6 +39,7 @@ class DownloadService extends GetxController {
       timer.cancel();
     }
     _downloadWatchdogs.clear();
+    _setDownloadWakelockEnabled(false);
     super.onClose();
   }
 
@@ -84,47 +88,70 @@ class DownloadService extends GetxController {
     task.filePath = filePath;
   }
 
-  void _startDownload(DownloadTask task) async {
+  void _startDownload(
+    DownloadTask task, {
+    bool allowLinkRefreshRetry = true,
+  }) async {
     final generation = _nextDownloadGeneration(task);
     _cancelDownloadWatchdog(task);
     _recordDownloadActivity(task);
     task.status = DownloadStatus.downloading;
+    task.failureReason = null;
     print('[Download] 开始下载: ${task.url}');
     tasks.refresh();
     await saveTasksToStorage();
+    _syncDownloadWakelock();
     _startDownloadWatchdog(task, generation);
 
-    await DownloadManager.download(
-      task,
-      (progress) async {
-        if (!_isCurrentDownload(task, generation)) return;
-        if (task.status != DownloadStatus.downloading) return;
+    try {
+      await DownloadManager.download(
+        task,
+        (update) async {
+          if (!_isCurrentDownload(task, generation)) return;
+          if (task.status != DownloadStatus.downloading) return;
 
-        print(
-            '[Download] 进度回调: ${(progress * 100).toStringAsFixed(2)}%, status=${task.status}');
+          print(
+              '[Download] 进度回调: ${(update.progress * 100).toStringAsFixed(2)}%, status=${task.status}');
 
-        if (progress < 0) {
-          await _markTaskFailed(task, generation);
-          print('[Download] 下载失败: ${task.url}');
-          return;
-        }
+          if (update.isFailure) {
+            final failureReason = update.failureReason ?? '下载失败，未返回具体原因';
+            if (allowLinkRefreshRetry &&
+                await _refreshAndRestartAfterLinkFailure(
+                  task,
+                  generation,
+                  failureReason,
+                )) {
+              return;
+            }
 
-        _recordDownloadActivity(task);
-        task.progress = progress.clamp(0.0, 1.0);
+            await _markTaskFailed(
+              task,
+              generation,
+              reason: failureReason,
+            );
+            print('[Download] 下载失败: ${task.url}');
+            return;
+          }
 
-        if (task.progress >= 1.0 && task.status != DownloadStatus.completed) {
-          await _completeTaskIfFileExists(task, generation);
-          return;
-        }
+          _recordDownloadActivity(task);
+          task.progress = update.progress.clamp(0.0, 1.0);
 
-        tasks.refresh();
-        print('[Download] 保存任务状态...');
-        await saveTasksToStorage();
-      },
-      shouldContinue: () =>
-          _isCurrentDownload(task, generation) &&
-          task.status == DownloadStatus.downloading,
-    );
+          if (task.progress >= 1.0 && task.status != DownloadStatus.completed) {
+            await _completeTaskIfFileExists(task, generation);
+            return;
+          }
+
+          tasks.refresh();
+          print('[Download] 保存任务状态...');
+          await saveTasksToStorage();
+        },
+        shouldContinue: () =>
+            _isCurrentDownload(task, generation) &&
+            task.status == DownloadStatus.downloading,
+      );
+    } catch (e) {
+      await _markTaskFailed(task, generation, reason: e.toString());
+    }
   }
 
   /// 取消某个任务下载
@@ -138,12 +165,14 @@ class DownloadService extends GetxController {
     // 标记为取消状态
     task.status = DownloadStatus.canceled;
     task.progress = 0.0;
+    task.failureReason = null;
 
     // 删除文件和封面（可选）
     await _deleteFile(task);
 
     tasks.refresh();
     await saveTasksToStorage();
+    _syncDownloadWakelock();
   }
 
   Future<void> _deleteFile(DownloadTask task) async {
@@ -180,6 +209,7 @@ class DownloadService extends GetxController {
 
     tasks.remove(task);
     await saveTasksToStorage();
+    _syncDownloadWakelock();
   }
 
   Future<void> clearAllTasks() async {
@@ -191,6 +221,7 @@ class DownloadService extends GetxController {
     }
     tasks.clear();
     await saveTasksToStorage();
+    _syncDownloadWakelock();
   }
 
   Future<void> retryDownload(DownloadTask task, {bool force = false}) async {
@@ -203,13 +234,16 @@ class DownloadService extends GetxController {
 
     task.progress = 0.0;
     task.status = DownloadStatus.pending;
+    task.failureReason = null;
     await _refreshResolvedUrlIfNeeded(task);
 
     if (!DownloadManager.isDownloadableUrl(task.url)) {
       task.status = DownloadStatus.failed;
+      task.failureReason = '重新下载失败，不支持页面内临时地址';
       debugPrint('[Download] 重新下载失败，不支持页面内临时地址: ${task.url}');
       tasks.refresh();
       await saveTasksToStorage();
+      _syncDownloadWakelock();
       return;
     }
 
@@ -231,8 +265,10 @@ class DownloadService extends GetxController {
     if (!repaired) {
       task.status = DownloadStatus.failed;
       task.progress = 0.0;
+      task.failureReason = '图片文件校验失败';
       tasks.refresh();
       await saveTasksToStorage();
+      _syncDownloadWakelock();
     }
     return repaired;
   }
@@ -293,9 +329,11 @@ class DownloadService extends GetxController {
           if (!await _downloadedFileExists(task)) {
             task.status = DownloadStatus.failed;
             task.progress = 0.0;
+            task.failureReason = '已完成文件不存在或为空';
           }
         } else {
           task.status = DownloadStatus.failed;
+          task.failureReason = '上次退出前下载未完成';
         }
       }
       tasks.assignAll(loaded);
@@ -358,7 +396,7 @@ class DownloadService extends GetxController {
 
       debugPrint('[Download] 下载长时间无进度，标记失败: ${task.url}');
       await DownloadManager.cancel(task);
-      await _markTaskFailed(task, generation);
+      await _markTaskFailed(task, generation, reason: '下载超过 2 分钟没有进度');
     });
   }
 
@@ -383,16 +421,19 @@ class DownloadService extends GetxController {
     DownloadTask task,
     int generation, {
     bool resetProgress = false,
+    String? reason,
   }) async {
     if (!_isCurrentDownload(task, generation)) return;
 
     _cancelDownloadWatchdog(task);
     task.status = DownloadStatus.failed;
+    task.failureReason = reason;
     if (resetProgress) {
       task.progress = 0.0;
     }
     tasks.refresh();
     await saveTasksToStorage();
+    _syncDownloadWakelock();
   }
 
   Future<void> _completeTaskIfFileExists(
@@ -404,7 +445,12 @@ class DownloadService extends GetxController {
     if (!await _downloadedFileExists(task)) {
       task.progress = 0.0;
       print('[Download] 进度达到100%，但文件不存在: ${task.filePath}');
-      await _markTaskFailed(task, generation, resetProgress: true);
+      await _markTaskFailed(
+        task,
+        generation,
+        resetProgress: true,
+        reason: '进度达到 100%，但文件不存在或为空',
+      );
       return;
     }
 
@@ -412,6 +458,7 @@ class DownloadService extends GetxController {
     print('[Download] 进度达到100%，文件存在，准备设置为 completed');
     task.progress = 1.0;
     task.status = DownloadStatus.completed;
+    task.failureReason = null;
 
     if (task.mediaType == DownloadMediaType.video) {
       print('[Download] 开始生成封面...');
@@ -426,6 +473,31 @@ class DownloadService extends GetxController {
     tasks.refresh();
     debugPrint('[Download] 保存任务状态...');
     await saveTasksToStorage();
+    _syncDownloadWakelock();
+  }
+
+  void _syncDownloadWakelock() {
+    final shouldKeepScreenOn =
+        tasks.any((task) => task.status == DownloadStatus.downloading);
+    _setDownloadWakelockEnabled(shouldKeepScreenOn);
+  }
+
+  void _setDownloadWakelockEnabled(bool enabled) {
+    _wakelockOperation = _wakelockOperation.then((_) async {
+      if (_downloadWakelockEnabled == enabled) return;
+
+      try {
+        if (enabled) {
+          await WakelockPlus.enable();
+        } else {
+          await WakelockPlus.disable();
+        }
+        _downloadWakelockEnabled = enabled;
+        debugPrint('[Download] ${enabled ? '开启' : '关闭'}下载防熄屏');
+      } catch (e) {
+        debugPrint('[Download] 切换防熄屏失败: $e');
+      }
+    });
   }
 
   bool _hasTask(String taskKey) {
@@ -530,6 +602,57 @@ class DownloadService extends GetxController {
     if (trimmedUrl != task.url) {
       task.url = trimmedUrl;
     }
+  }
+
+  Future<bool> _refreshAndRestartAfterLinkFailure(
+    DownloadTask task,
+    int generation,
+    String failureReason,
+  ) async {
+    if (!_isCurrentDownload(task, generation)) return false;
+    if (!_shouldRefreshAfterFailure(task, failureReason)) return false;
+
+    final oldUrl = task.url;
+    debugPrint('[Download] 链接失效，尝试刷新线路后重试: $failureReason');
+
+    try {
+      await _refreshResolvedUrlIfNeeded(task);
+    } catch (e) {
+      debugPrint('[Download] 刷新下载线路失败: $e');
+      return false;
+    }
+
+    if (!_isCurrentDownload(task, generation)) return false;
+    if (task.url == oldUrl || !DownloadManager.isDownloadableUrl(task.url)) {
+      return false;
+    }
+
+    _invalidateDownload(task);
+    _cancelDownloadWatchdog(task);
+    await _deleteFile(task);
+    task.progress = 0.0;
+    task.status = DownloadStatus.pending;
+    task.failureReason = null;
+    tasks.refresh();
+    await saveTasksToStorage();
+    _startDownload(task, allowLinkRefreshRetry: false);
+    return true;
+  }
+
+  bool _shouldRefreshAfterFailure(DownloadTask task, String failureReason) {
+    if (task.sourceAttachmentId == null || task.originPageUrl.trim().isEmpty) {
+      return false;
+    }
+
+    final lower = failureReason.toLowerCase();
+    return lower.contains('404') ||
+        lower.contains('403') ||
+        lower.contains('not found') ||
+        lower.contains('forbidden') ||
+        lower.contains('server returned') ||
+        lower.contains('unable to open key file') ||
+        lower.contains('error when loading first segment') ||
+        lower.contains('invalid data found when processing input');
   }
 
   /// 异步批量补生成历史任务封面（启动时调用）

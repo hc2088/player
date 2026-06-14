@@ -334,6 +334,11 @@ class _DownloadListPageState extends State<DownloadListPage> {
           _buildSourceDomain(task),
           const SizedBox(height: 6),
           _buildStatusAndActions(task),
+          if (task.status == DownloadStatus.failed &&
+              task.failureReason?.trim().isNotEmpty == true) ...[
+            const SizedBox(height: 6),
+            _buildFailureReason(task.failureReason!.trim()),
+          ],
           if (task.status == DownloadStatus.downloading) ...[
             const SizedBox(height: 6),
             Row(
@@ -355,6 +360,32 @@ class _DownloadListPageState extends State<DownloadListPage> {
           ],
         ],
       ),
+    );
+  }
+
+  Widget _buildFailureReason(String reason) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Icon(
+          Icons.error_outline,
+          size: 15,
+          color: Colors.redAccent,
+        ),
+        const SizedBox(width: 4),
+        Expanded(
+          child: Text(
+            reason,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Colors.redAccent,
+              fontSize: 12,
+              height: 1.2,
+            ),
+          ),
+        ),
+      ],
     );
   }
 
