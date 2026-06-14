@@ -324,7 +324,9 @@ class DownloadManager {
     final hours = int.tryParse(match.group(1) ?? '');
     final minutes = int.tryParse(match.group(2) ?? '');
     final seconds = double.tryParse(match.group(3) ?? '');
-    if (hours == null || minutes == null || seconds == null) return null;
+    if (hours == null) return null;
+    if (minutes == null) return null;
+    if (seconds == null) return null;
     return (hours * 3600) + (minutes * 60) + seconds;
   }
 
