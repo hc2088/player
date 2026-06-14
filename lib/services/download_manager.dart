@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
 import 'package:ffmpeg_kit_flutter_new/ffmpeg_session.dart';
@@ -73,6 +75,24 @@ class DownloadManager {
       final ext = p.extension(Uri.tryParse(task.url)?.path ?? '').toLowerCase();
       const audioExts = {'.mp3', '.m4a', '.aac', '.wav', '.ogg', '.flac'};
       return audioExts.contains(ext) ? ext : '.mp3';
+    }
+
+    if (task.mediaType == DownloadMediaType.image) {
+      final path = Uri.tryParse(task.url)?.path ?? '';
+      final normalizedPath =
+          path.toLowerCase().endsWith('.txt') ? p.withoutExtension(path) : path;
+      final ext = p.extension(normalizedPath).toLowerCase();
+      const imageExts = {
+        '.jpg',
+        '.jpeg',
+        '.png',
+        '.webp',
+        '.gif',
+        '.bmp',
+        '.heic',
+        '.heif',
+      };
+      return imageExts.contains(ext) ? ext : '.jpg';
     }
 
     return '.mp4';
@@ -176,6 +196,11 @@ class DownloadManager {
     if (!isDownloadableUrl(task.url)) {
       debugPrint('[Download] 不支持下载页面内临时地址: ${task.url}');
       onProgress(-1.0);
+      return;
+    }
+
+    if (task.mediaType == DownloadMediaType.image) {
+      await _downloadImageFile(task, onProgress, shouldContinue);
       return;
     }
 
@@ -294,7 +319,7 @@ class DownloadManager {
       sink = null;
       onProgress(1.0);
     } catch (e) {
-      print('[Download] 直连音频下载失败: $e');
+      print('[Download] 直连文件下载失败: $e');
       await sink?.close();
       if (await outputFile.exists()) {
         await outputFile.delete();
@@ -304,6 +329,242 @@ class DownloadManager {
       _activeHttpClients.remove(task.id);
       client.close(force: true);
     }
+  }
+
+  static Future<void> _downloadImageFile(
+    DownloadTask task,
+    Function(double) onProgress,
+    bool Function()? shouldContinue,
+  ) async {
+    if (shouldContinue?.call() == false) return;
+
+    final filePath = task.filePath;
+    if (filePath == null || filePath.isEmpty) {
+      onProgress(-1.0);
+      return;
+    }
+
+    final uri = Uri.tryParse(task.url);
+    if (uri == null) {
+      onProgress(-1.0);
+      return;
+    }
+
+    final outputFile = File(filePath);
+    final parent = outputFile.parent;
+    if (!await parent.exists()) {
+      await parent.create(recursive: true);
+    }
+
+    final client = HttpClient();
+    client.connectionTimeout = _networkIdleTimeout;
+    _activeHttpClients[task.id] = client;
+
+    try {
+      final request = await client.getUrl(uri);
+      final headers = await _httpHeadersForTask(task);
+      headers.forEach(request.headers.set);
+
+      final response = await request.close().timeout(_networkIdleTimeout);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw HttpException(
+          'HTTP ${response.statusCode}',
+          uri: uri,
+        );
+      }
+
+      final totalBytes = response.contentLength;
+      var receivedBytes = 0;
+      final builder = BytesBuilder(copy: false);
+
+      await for (final chunk in response.timeout(_networkIdleTimeout)) {
+        if (shouldContinue?.call() == false) return;
+
+        receivedBytes += chunk.length;
+        builder.add(chunk);
+
+        if (totalBytes > 0) {
+          onProgress((receivedBytes / totalBytes).clamp(0.0, 0.999));
+        }
+      }
+
+      if (shouldContinue?.call() == false) return;
+
+      final imageBytes = _decodeDownloadedImageBytes(builder.takeBytes());
+      await outputFile.writeAsBytes(imageBytes, flush: true);
+      onProgress(1.0);
+    } catch (e) {
+      debugPrint('[Download] 图片下载失败: $e');
+      if (await outputFile.exists()) {
+        await outputFile.delete();
+      }
+      onProgress(-1.0);
+    } finally {
+      _activeHttpClients.remove(task.id);
+      client.close(force: true);
+    }
+  }
+
+  @visibleForTesting
+  static Uint8List decodeDownloadedImageBytesForTesting(Uint8List bytes) {
+    return _decodeDownloadedImageBytes(bytes);
+  }
+
+  static Future<bool> repairDownloadedImageFile(DownloadTask task) async {
+    if (task.mediaType != DownloadMediaType.image) return true;
+
+    final filePath = task.filePath;
+    if (filePath == null || filePath.isEmpty) return false;
+
+    final file = File(filePath);
+    if (!await file.exists()) return false;
+
+    try {
+      final bytes = await file.readAsBytes();
+      final decoded = _decodeDownloadedImageBytes(bytes);
+      if (!listEquals(bytes, decoded)) {
+        await file.writeAsBytes(decoded, flush: true);
+      }
+      return true;
+    } catch (e) {
+      debugPrint('[Download] 图片文件校验失败: $e');
+      return false;
+    }
+  }
+
+  static Uint8List _decodeDownloadedImageBytes(Uint8List bytes) {
+    if (_hasSupportedImageHeader(bytes)) return bytes;
+
+    final text = utf8.decode(bytes, allowMalformed: true).trim();
+    final directDataUri = _decodeDataImageUri(text);
+    if (directDataUri != null) return directDataUri;
+
+    final targetSiteText = _decodeTargetSiteImageText(text).trim();
+    final targetSiteDataUri = _decodeDataImageUri(targetSiteText);
+    if (targetSiteDataUri != null) return targetSiteDataUri;
+
+    final base64Image = _decodeBase64Image(targetSiteText);
+    if (base64Image != null) return base64Image;
+
+    throw const FormatException('响应不是有效图片数据');
+  }
+
+  static Uint8List? _decodeDataImageUri(String text) {
+    final match = RegExp(
+      r'^data:image/[^;]+;base64,',
+      caseSensitive: false,
+      dotAll: true,
+    ).firstMatch(text);
+    if (match == null) return null;
+
+    return _decodeBase64Image(text.substring(match.end));
+  }
+
+  static Uint8List? _decodeBase64Image(String text) {
+    final compact = text.replaceAll(RegExp(r'\s+'), '');
+    if (compact.length < 8 ||
+        !RegExp(r'^[A-Za-z0-9+/_=-]+$').hasMatch(compact)) {
+      return null;
+    }
+
+    try {
+      final decoded = base64.decode(base64.normalize(compact));
+      return _hasSupportedImageHeader(decoded) ? decoded : null;
+    } on FormatException {
+      return null;
+    }
+  }
+
+  static String _decodeTargetSiteImageText(String text) {
+    const alphabet =
+        'ABCD*EFGHIJKLMNOPQRSTUVWX#YZabcdefghijklmnopqrstuvwxyz1234567890';
+    final encoded = text.replaceAll(RegExp(r'[^A-Za-z0-9*#]'), '');
+    if (encoded.length < 2) {
+      throw const FormatException('图片编码内容为空');
+    }
+
+    final builder = BytesBuilder(copy: false);
+    for (var offset = 0; offset < encoded.length; offset += 4) {
+      final remaining = encoded.length - offset;
+      if (remaining < 2) break;
+
+      final first = alphabet.indexOf(encoded[offset]);
+      final second = alphabet.indexOf(encoded[offset + 1]);
+      final third = remaining > 2 ? alphabet.indexOf(encoded[offset + 2]) : 64;
+      final fourth = remaining > 3 ? alphabet.indexOf(encoded[offset + 3]) : 64;
+
+      if (first < 0 ||
+          second < 0 ||
+          (remaining > 2 && third < 0) ||
+          (remaining > 3 && fourth < 0)) {
+        throw const FormatException('图片编码包含非法字符');
+      }
+
+      final byte1 = (first << 2) | (second >> 4);
+      builder.addByte(byte1 & 0xFF);
+
+      if (third != 64) {
+        final byte2 = ((second & 15) << 4) | (third >> 2);
+        builder.addByte(byte2 & 0xFF);
+      }
+
+      if (fourth != 64) {
+        final byte3 = ((third & 3) << 6) | fourth;
+        builder.addByte(byte3 & 0xFF);
+      }
+    }
+
+    return utf8.decode(builder.takeBytes(), allowMalformed: true);
+  }
+
+  static bool _hasSupportedImageHeader(List<int> bytes) {
+    if (bytes.length < 4) return false;
+
+    if (bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF) {
+      return true;
+    }
+
+    if (bytes.length >= 8 &&
+        bytes[0] == 0x89 &&
+        bytes[1] == 0x50 &&
+        bytes[2] == 0x4E &&
+        bytes[3] == 0x47 &&
+        bytes[4] == 0x0D &&
+        bytes[5] == 0x0A &&
+        bytes[6] == 0x1A &&
+        bytes[7] == 0x0A) {
+      return true;
+    }
+
+    if (bytes.length >= 6) {
+      final signature = String.fromCharCodes(bytes.take(6));
+      if (signature == 'GIF87a' || signature == 'GIF89a') return true;
+    }
+
+    if (bytes.length >= 12) {
+      final riff = String.fromCharCodes(bytes.take(4));
+      final webp = String.fromCharCodes(bytes.skip(8).take(4));
+      if (riff == 'RIFF' && webp == 'WEBP') return true;
+    }
+
+    if (bytes[0] == 0x42 && bytes[1] == 0x4D) return true;
+
+    if (bytes.length >= 12) {
+      final box = String.fromCharCodes(bytes.skip(4).take(4));
+      final brand = String.fromCharCodes(bytes.skip(8).take(4));
+      const heifBrands = {
+        'heic',
+        'heix',
+        'hevc',
+        'hevx',
+        'heif',
+        'mif1',
+        'msf1',
+      };
+      if (box == 'ftyp' && heifBrands.contains(brand)) return true;
+    }
+
+    return false;
   }
 
   static Future<List<String>> _inputArgumentsForTask(DownloadTask task) async {

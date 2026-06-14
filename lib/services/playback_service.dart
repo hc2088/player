@@ -175,6 +175,17 @@ class PlaybackService extends GetxService {
     });
   }
 
+  void updateSessionFile({
+    required String oldPath,
+    required String newPath,
+    required String title,
+  }) {
+    if (_filePath != oldPath) return;
+
+    _filePath = newPath;
+    this.title.value = title;
+  }
+
   Future<void> stopOtherSessionIfNeeded(String path) async {
     if (hasSession.value && !isSameSession(path)) {
       await stop(silent: true);

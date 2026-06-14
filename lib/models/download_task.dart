@@ -2,7 +2,7 @@ import 'package:get/get.dart';
 
 enum DownloadStatus { pending, downloading, completed, failed, canceled }
 
-enum DownloadMediaType { video, audio }
+enum DownloadMediaType { video, audio, image }
 
 class DownloadTask {
   String id;

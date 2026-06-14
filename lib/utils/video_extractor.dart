@@ -19,7 +19,7 @@ class InAppWebViewScriptExecutor implements ScriptExecutor {
   }
 }
 
-enum ExtractedMediaType { video, audio }
+enum ExtractedMediaType { video, audio, image }
 
 class ExtractedMediaUrl {
   const ExtractedMediaUrl({
@@ -36,6 +36,7 @@ class ExtractedMediaUrl {
 
   bool get isVideo => type == ExtractedMediaType.video;
   bool get isAudio => type == ExtractedMediaType.audio;
+  bool get isImage => type == ExtractedMediaType.image;
 }
 
 class VideoExtractor {
@@ -150,7 +151,44 @@ class VideoExtractor {
               push('video', href, text);
             } else if (/\\.(mp3|m4a|aac|wav|ogg|flac)(\\?|#|\$)/i.test(href)) {
               push('audio', href, text);
+            } else if (/\\.(jpg|jpeg|png|webp|gif|bmp|heic|heif)(\\.txt)?(\\?|#|\$)/i.test(href)) {
+              push('image', href, text);
             }
+          });
+
+          document.querySelectorAll('img').forEach((img, index) => {
+            const name = img.getAttribute('alt')
+              || img.getAttribute('title')
+              || img.getAttribute('aria-label')
+              || '';
+            [
+              img.currentSrc,
+              img.src,
+              img.getAttribute('src'),
+              img.getAttribute('data-src'),
+              img.getAttribute('data-original'),
+              img.getAttribute('data-url'),
+              img.getAttribute('data-lazy-src')
+            ].forEach(url => push('image', url, name));
+
+            const srcset = img.getAttribute('srcset')
+              || img.getAttribute('data-srcset')
+              || '';
+            srcset.split(',').forEach(part => {
+              const url = part.trim().split(/\\s+/)[0];
+              push('image', url, name);
+            });
+          });
+
+          document.querySelectorAll('[style]').forEach((node, index) => {
+            const style = node.getAttribute('style') || '';
+            const matches = style.match(/url\\((['"]?)(.*?)\\1\\)/gi) || [];
+            matches.forEach(match => {
+              const url = match.replace(/^url\\((['"]?)/i, '').replace(/(['"]?)\\)\$/i, '');
+              if (/\\.(jpg|jpeg|png|webp|gif|bmp|heic|heif)(\\.txt)?(\\?|#|\$)/i.test(url)) {
+                push('image', url, '');
+              }
+            });
           });
 
           if (window.performance && performance.getEntriesByType) {
@@ -160,6 +198,8 @@ class VideoExtractor {
                 push('video', url, '');
               } else if (/\\.(mp3|m4a|aac|wav|ogg|flac)(\\?|#|\$)/i.test(url)) {
                 push('audio', url, '');
+              } else if (/\\.(jpg|jpeg|png|webp|gif|bmp|heic|heif)(\\.txt)?(\\?|#|\$)/i.test(url)) {
+                push('image', url, '');
               }
             });
           }
@@ -180,9 +220,7 @@ class VideoExtractor {
             if (!_isDownloadableWebUrl(url)) return null;
             return ExtractedMediaUrl(
               url: url,
-              type: item['type'] == 'audio'
-                  ? ExtractedMediaType.audio
-                  : ExtractedMediaType.video,
+              type: _typeFromString(item['type']?.toString()),
               name: item['name']?.toString(),
             );
           })
@@ -236,11 +274,7 @@ class VideoExtractor {
       var index = 0;
       for (final rawAttachment in attachments.whereType<Map>()) {
         final category = _nonEmptyString(rawAttachment['category']);
-        final type = category == 'audio'
-            ? ExtractedMediaType.audio
-            : category == 'video'
-                ? ExtractedMediaType.video
-                : null;
+        final type = _targetSiteAttachmentType(category);
         if (type == null) continue;
 
         final attachmentId = _intValue(rawAttachment['id']);
@@ -387,6 +421,35 @@ class VideoExtractor {
       }
     }
 
+    return null;
+  }
+
+  static ExtractedMediaType _typeFromString(String? value) {
+    switch (value) {
+      case 'audio':
+        return ExtractedMediaType.audio;
+      case 'image':
+        return ExtractedMediaType.image;
+      case 'video':
+      default:
+        return ExtractedMediaType.video;
+    }
+  }
+
+  static ExtractedMediaType? _targetSiteAttachmentType(String? category) {
+    switch (category?.toLowerCase()) {
+      case 'audio':
+        return ExtractedMediaType.audio;
+      case 'video':
+        return ExtractedMediaType.video;
+      case 'image':
+      case 'images':
+      case 'picture':
+      case 'pictures':
+      case 'photo':
+      case 'photos':
+        return ExtractedMediaType.image;
+    }
     return null;
   }
 
@@ -596,6 +659,11 @@ class VideoExtractor {
     final lower = value.toLowerCase();
     if (type == ExtractedMediaType.audio) {
       return RegExp(r'\.(mp3|m4a|aac|wav|ogg|flac)(\?|#|$)').hasMatch(lower);
+    }
+
+    if (type == ExtractedMediaType.image) {
+      return RegExp(r'\.(jpg|jpeg|png|webp|gif|bmp|heic|heif)(\.txt)?(\?|#|$)')
+          .hasMatch(lower);
     }
 
     return RegExp(r'\.(m3u8|mp4|mov|m4v)(\?|#|$)').hasMatch(lower) ||

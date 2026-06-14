@@ -249,14 +249,20 @@ class VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
     final shortHash = url.hashCode.toRadixString(16);
     final now = DateTime.now();
     final timeStr = DateFormat('yyyyMMddHHmmss').format(now);
-    final suffix = type == ExtractedMediaType.audio ? 'mp3' : 'mp4';
+    final suffix = switch (type) {
+      ExtractedMediaType.audio => 'mp3',
+      ExtractedMediaType.image => 'jpg',
+      ExtractedMediaType.video => 'mp4',
+    };
     return "$safeTitle-$shortHash-$timeStr-$index.$suffix";
   }
 
   DownloadMediaType _toDownloadMediaType(ExtractedMediaType type) {
-    return type == ExtractedMediaType.audio
-        ? DownloadMediaType.audio
-        : DownloadMediaType.video;
+    return switch (type) {
+      ExtractedMediaType.audio => DownloadMediaType.audio,
+      ExtractedMediaType.image => DownloadMediaType.image,
+      ExtractedMediaType.video => DownloadMediaType.video,
+    };
   }
 
   void _cancelExtractFeedback() {
@@ -389,7 +395,7 @@ class VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
           ? pageTitle.trim()
           : "media_${DateTime.now().millisecondsSinceEpoch}";
 
-      _updateExtractStatus(extractRunId, '正在识别音频和视频链接...');
+      _updateExtractStatus(extractRunId, '正在识别音频、视频和图片链接...');
 
       final executor = InAppWebViewScriptExecutor(_controller!);
       final mediaItems = await VideoExtractor.extractMediaUrls(
@@ -446,15 +452,12 @@ class VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
           }
         }
 
-        final audioCount = mediaItems
-            .where((item) => item.type == ExtractedMediaType.audio)
-            .length;
-        final videoCount = mediaItems
-            .where((item) => item.type == ExtractedMediaType.video)
-            .length;
+        final audioCount = mediaItems.where((item) => item.isAudio).length;
+        final videoCount = mediaItems.where((item) => item.isVideo).length;
+        final imageCount = mediaItems.where((item) => item.isImage).length;
         final resultText = addedCount > 0
-            ? '音频 $audioCount 个，视频 $videoCount 个，已添加 $addedCount 个下载任务并开始下载'
-            : '音频 $audioCount 个，视频 $videoCount 个，都已在下载列表中';
+            ? '音频 $audioCount 个，视频 $videoCount 个，图片 $imageCount 张，已添加 $addedCount 个下载任务并开始下载'
+            : '音频 $audioCount 个，视频 $videoCount 个，图片 $imageCount 张，都已在下载列表中';
         final existedText = existedCount > 0 ? '，跳过 $existedCount 个已存在任务' : '';
 
         _showPageSnack(
@@ -466,7 +469,7 @@ class VideoInAppWebDetailPageState extends State<VideoInAppWebDetailPage> {
           ),
         );
       } else {
-        _showPageSnack('媒体链接提取', '未找到可下载的音频或视频链接');
+        _showPageSnack('媒体链接提取', '未找到可下载的音频、视频或图片链接');
       }
     } catch (e) {
       if (_isCurrentExtractRun(extractRunId)) {

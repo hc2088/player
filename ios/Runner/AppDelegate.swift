@@ -1,12 +1,14 @@
 import UIKit
 import Flutter
 import AVFoundation
+import Darwin
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {
     var splashWindow: UIWindow?
     var privacyWindow: UIWindow?
     private let fileShareChannel = "player/file_share"
+    private let appControlChannel = "player/app_control"
     
     override func application(
         _ application: UIApplication,
@@ -19,6 +21,7 @@ import AVFoundation
         let result = super.application(application, didFinishLaunchingWithOptions: launchOptions)
         configureBackgroundPlaybackAudioSession()
         registerFileShareChannel()
+        registerAppControlChannel()
         
         // 创建覆盖启动图的浮层窗口
         splashWindow = UIWindow(frame: UIScreen.main.bounds)
@@ -118,6 +121,28 @@ import AVFoundation
                 from: controller,
                 result: result
             )
+        }
+    }
+
+    private func registerAppControlChannel() {
+        guard let controller = window?.rootViewController as? FlutterViewController else {
+            return
+        }
+
+        let channel = FlutterMethodChannel(
+            name: appControlChannel,
+            binaryMessenger: controller.binaryMessenger
+        )
+        channel.setMethodCallHandler { call, result in
+            guard call.method == "exitApp" else {
+                result(FlutterMethodNotImplemented)
+                return
+            }
+
+            result(nil)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                exit(0)
+            }
         }
     }
 

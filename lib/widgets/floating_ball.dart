@@ -2,10 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:player/utils/screen_info.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+enum FloatingBallAnchor { leftBottom, rightBottom }
+
 class FloatingBall extends StatefulWidget {
   final Widget child;
+  final String storageKeyPrefix;
+  final FloatingBallAnchor initialAnchor;
 
-  const FloatingBall({Key? key, required this.child}) : super(key: key);
+  const FloatingBall({
+    super.key,
+    required this.child,
+    this.storageKeyPrefix = 'floatingBall',
+    this.initialAnchor = FloatingBallAnchor.rightBottom,
+  });
 
   @override
   State<FloatingBall> createState() => _FloatingBallState();
@@ -13,9 +22,6 @@ class FloatingBall extends StatefulWidget {
 
 class _FloatingBallState extends State<FloatingBall>
     with TickerProviderStateMixin {
-  static const _prefKeyX = 'floatingBallX';
-  static const _prefKeyY = 'floatingBallY';
-
   Offset _offset = Offset.zero;
   bool _initialized = false;
 
@@ -54,8 +60,12 @@ class _FloatingBallState extends State<FloatingBall>
         final height = context.screenInfo.usableHeight;
         const fabSize = 56.0;
         const margin = 16.0;
+        final dx = widget.initialAnchor == FloatingBallAnchor.leftBottom
+            ? margin
+            : width - fabSize - margin;
+
         setState(() {
-          _offset = Offset(width - fabSize - margin, height - fabSize - margin);
+          _offset = Offset(dx, height - fabSize - margin);
           _initialized = true;
         });
       });
@@ -67,6 +77,10 @@ class _FloatingBallState extends State<FloatingBall>
     await prefs.setDouble(_prefKeyX, offset.dx);
     await prefs.setDouble(_prefKeyY, offset.dy);
   }
+
+  String get _prefKeyX => '${widget.storageKeyPrefix}X';
+
+  String get _prefKeyY => '${widget.storageKeyPrefix}Y';
 
   void _onDragUpdate(DragUpdateDetails details) {
     setState(() {

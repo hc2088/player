@@ -12,6 +12,7 @@ import java.io.File
 
 class MainActivity: FlutterActivity() {
     private val fileShareChannel = "player/file_share"
+    private val appControlChannel = "player/app_control"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         window.setFlags(
@@ -63,6 +64,19 @@ class MainActivity: FlutterActivity() {
             } catch (error: Exception) {
                 result.error("share_failed", error.message, null)
             }
+        }
+
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            appControlChannel
+        ).setMethodCallHandler { call, result ->
+            if (call.method != "exitApp") {
+                result.notImplemented()
+                return@setMethodCallHandler
+            }
+
+            result.success(null)
+            finishAndRemoveTask()
         }
     }
 

@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
+import 'package:path/path.dart' as p;
 import '../models/download_task.dart';
 import '../utils/video_extractor.dart';
 import 'download_manager.dart';
@@ -222,6 +223,63 @@ class DownloadService extends GetxController {
     return retryDownload(task, force: true);
   }
 
+  Future<bool> repairCompletedImageTask(DownloadTask task) async {
+    if (task.mediaType != DownloadMediaType.image) return true;
+    if (task.status != DownloadStatus.completed) return false;
+
+    final repaired = await DownloadManager.repairDownloadedImageFile(task);
+    if (!repaired) {
+      task.status = DownloadStatus.failed;
+      task.progress = 0.0;
+      tasks.refresh();
+      await saveTasksToStorage();
+    }
+    return repaired;
+  }
+
+  Future<void> renameCompletedTask(
+    DownloadTask task,
+    String requestedName,
+  ) async {
+    if (task.status != DownloadStatus.completed) {
+      throw StateError('下载完成后才能修改文件名');
+    }
+
+    final currentPath = task.filePath;
+    if (currentPath == null || currentPath.isEmpty) {
+      throw FileSystemException('文件路径为空');
+    }
+
+    final currentFile = File(currentPath);
+    if (!await currentFile.exists()) {
+      throw FileSystemException('文件不存在', currentPath);
+    }
+
+    final currentFileName = p.basename(currentPath);
+    final extension = p.extension(currentFileName);
+    final fallbackBaseName = p.basenameWithoutExtension(currentFileName);
+    final baseName = _sanitizeRenameBaseName(
+      requestedName,
+      fallback: fallbackBaseName,
+      extension: extension,
+    );
+    final targetPath = await _availableRenamePath(
+      directoryPath: currentFile.parent.path,
+      baseName: baseName,
+      extension: extension,
+      currentFileName: currentFileName,
+    );
+
+    if (p.normalize(targetPath) != p.normalize(currentPath)) {
+      await currentFile.rename(targetPath);
+    }
+
+    task.filePath = targetPath;
+    task.fileName = p.basename(targetPath);
+    tasks.refresh();
+    await saveTasksToStorage();
+  }
+
   Future<void> loadTasksFromStorage() async {
     final stored = box.read(storageKey);
     if (stored != null) {
@@ -374,6 +432,58 @@ class DownloadService extends GetxController {
     return tasks.any((task) => _taskKey(task.url, task.mediaType) == taskKey);
   }
 
+  String _sanitizeRenameBaseName(
+    String requestedName, {
+    required String fallback,
+    required String extension,
+  }) {
+    var baseName = requestedName.trim();
+    baseName = baseName.replaceAll(RegExp(r'[\\/:*?"<>|\x00-\x1F]'), '_');
+    if (extension.isNotEmpty &&
+        baseName.toLowerCase().endsWith(extension.toLowerCase())) {
+      baseName = baseName.substring(0, baseName.length - extension.length);
+    }
+    baseName = baseName.trim();
+    baseName = baseName.replaceAll(RegExp(r'\s+'), ' ');
+    baseName = baseName.replaceAll(RegExp(r'^\.+|\.+$'), '').trim();
+
+    if (baseName.isEmpty) {
+      baseName = fallback.trim();
+    }
+    if (baseName.isEmpty) {
+      baseName = 'download';
+    }
+
+    const maxBaseNameLength = 80;
+    if (baseName.length > maxBaseNameLength) {
+      baseName = baseName.substring(0, maxBaseNameLength).trim();
+    }
+    return baseName;
+  }
+
+  Future<String> _availableRenamePath({
+    required String directoryPath,
+    required String baseName,
+    required String extension,
+    required String currentFileName,
+  }) async {
+    var index = 0;
+
+    while (true) {
+      final suffix = index == 0 ? '' : ' ($index)';
+      final candidateFileName = '$baseName$suffix$extension';
+      final candidatePath = p.join(directoryPath, candidateFileName);
+      final isCurrentFile =
+          candidateFileName.toLowerCase() == currentFileName.toLowerCase();
+
+      if (isCurrentFile || !await File(candidatePath).exists()) {
+        return candidatePath;
+      }
+
+      index++;
+    }
+  }
+
   String _taskKey(String url, DownloadMediaType mediaType) {
     final trimmedUrl = url.trim();
     final uri = Uri.tryParse(trimmedUrl);
@@ -389,7 +499,11 @@ class DownloadService extends GetxController {
 
     final file = File(filePath);
     try {
-      return await file.exists() && await file.length() > 0;
+      if (!await file.exists() || await file.length() <= 0) return false;
+      if (task.mediaType == DownloadMediaType.image) {
+        return DownloadManager.repairDownloadedImageFile(task);
+      }
+      return true;
     } catch (_) {
       return false;
     }
@@ -399,9 +513,11 @@ class DownloadService extends GetxController {
     final attachmentId = task.sourceAttachmentId;
     if (attachmentId == null || task.originPageUrl.trim().isEmpty) return;
 
-    final type = task.mediaType == DownloadMediaType.audio
-        ? ExtractedMediaType.audio
-        : ExtractedMediaType.video;
+    final type = switch (task.mediaType) {
+      DownloadMediaType.audio => ExtractedMediaType.audio,
+      DownloadMediaType.image => ExtractedMediaType.image,
+      DownloadMediaType.video => ExtractedMediaType.video,
+    };
     final resolvedUrl = await VideoExtractor.refreshTargetSiteMediaUrl(
       pageUrl: task.originPageUrl,
       attachmentId: attachmentId,

@@ -13,55 +13,72 @@ class LocalImageViewerPage extends StatefulWidget {
 }
 
 class _LocalImageViewerPageState extends State<LocalImageViewerPage> {
-  final TransformationController _transformationController =
-      TransformationController();
+  late final PageController _pageController;
 
-  String? _filePath;
-  String _title = '图片';
+  List<_ImagePreviewItem> _items = const [];
+  int _currentIndex = 0;
 
   @override
   void initState() {
     super.initState();
-
     final args = Get.arguments;
+
     if (args is Map) {
-      _filePath = args['path'] as String?;
-      _title = (args['title'] as String?) ?? _title;
+      final rawItems = args['items'];
+      if (rawItems is List) {
+        _items = rawItems
+            .whereType<Map>()
+            .map((item) {
+              final path = item['path']?.toString();
+              if (path == null || path.isEmpty) return null;
+              return _ImagePreviewItem(
+                path: path,
+                title: item['title']?.toString() ?? '图片',
+              );
+            })
+            .whereType<_ImagePreviewItem>()
+            .toList(growable: false);
+      }
+
+      if (_items.isEmpty) {
+        final path = args['path'] as String?;
+        if (path != null && path.isNotEmpty) {
+          _items = [
+            _ImagePreviewItem(
+              path: path,
+              title: (args['title'] as String?) ?? '图片',
+            ),
+          ];
+        }
+      }
+
+      _currentIndex = (args['initialIndex'] as int?) ?? 0;
     } else if (args is String) {
-      _filePath = args;
+      _items = [
+        _ImagePreviewItem(path: args, title: '图片'),
+      ];
     }
+
+    if (_items.isEmpty) {
+      _currentIndex = 0;
+    } else {
+      _currentIndex = _currentIndex.clamp(0, _items.length - 1);
+    }
+    _pageController = PageController(initialPage: _currentIndex);
   }
 
   @override
   void dispose() {
-    _transformationController.dispose();
+    _pageController.dispose();
     super.dispose();
   }
 
-  void _zoom(double scale) {
-    final next = Matrix4.copy(_transformationController.value);
-    final storage = next.storage;
-    storage[0] *= scale;
-    storage[1] *= scale;
-    storage[2] *= scale;
-    storage[3] *= scale;
-    storage[4] *= scale;
-    storage[5] *= scale;
-    storage[6] *= scale;
-    storage[7] *= scale;
-    _transformationController.value = next;
-  }
-
-  void _resetZoom() {
-    _transformationController.value = Matrix4.identity();
-  }
-
   Future<void> _shareFile() async {
-    final path = _filePath;
-    if (path == null || path.isEmpty) return;
+    if (_items.isEmpty) return;
+    final item = _items[_currentIndex];
 
     try {
-      await FileShareService.shareFile(path, title: _title);
+      await FileShareService.shareFile(item.path, title: item.title);
     } catch (e) {
       Get.snackbar('分享失败', e.toString());
     }
@@ -69,8 +86,11 @@ class _LocalImageViewerPageState extends State<LocalImageViewerPage> {
 
   @override
   Widget build(BuildContext context) {
-    final path = _filePath;
-    final fileExists = path != null && File(path).existsSync();
+    final hasItems = _items.isNotEmpty;
+    final currentTitle = hasItems ? _items[_currentIndex].title : '图片';
+    final title = hasItems && _items.length > 1
+        ? '$currentTitle ${_currentIndex + 1}/${_items.length}'
+        : currentTitle;
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -78,44 +98,34 @@ class _LocalImageViewerPageState extends State<LocalImageViewerPage> {
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
         title: Text(
-          _title,
+          title,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
         actions: [
           IconButton(
             tooltip: '分享',
-            onPressed: fileExists ? _shareFile : null,
+            onPressed: hasItems && File(_items[_currentIndex].path).existsSync()
+                ? _shareFile
+                : null,
             icon: const Icon(Icons.share),
-          ),
-          IconButton(
-            tooltip: '缩小',
-            onPressed: fileExists ? () => _zoom(0.8) : null,
-            icon: const Icon(Icons.remove),
-          ),
-          IconButton(
-            tooltip: '放大',
-            onPressed: fileExists ? () => _zoom(1.25) : null,
-            icon: const Icon(Icons.add),
-          ),
-          IconButton(
-            tooltip: '还原',
-            onPressed: fileExists ? _resetZoom : null,
-            icon: const Icon(Icons.center_focus_strong),
           ),
         ],
       ),
-      body: fileExists
-          ? InteractiveViewer(
-              transformationController: _transformationController,
-              minScale: 0.5,
-              maxScale: 6,
-              child: Center(
-                child: Image.file(
-                  File(path),
-                  fit: BoxFit.contain,
-                ),
-              ),
+      body: hasItems
+          ? PageView.builder(
+              controller: _pageController,
+              scrollDirection: Axis.vertical,
+              itemCount: _items.length,
+              onPageChanged: (index) {
+                setState(() {
+                  _currentIndex = index;
+                });
+              },
+              itemBuilder: (context, index) {
+                final item = _items[index];
+                return _ZoomableImagePage(item: item);
+              },
             )
           : const Center(
               child: Text(
@@ -125,4 +135,68 @@ class _LocalImageViewerPageState extends State<LocalImageViewerPage> {
             ),
     );
   }
+}
+
+class _ZoomableImagePage extends StatefulWidget {
+  const _ZoomableImagePage({required this.item});
+
+  final _ImagePreviewItem item;
+
+  @override
+  State<_ZoomableImagePage> createState() => _ZoomableImagePageState();
+}
+
+class _ZoomableImagePageState extends State<_ZoomableImagePage> {
+  final TransformationController _controller = TransformationController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final file = File(widget.item.path);
+    if (!file.existsSync()) {
+      return const Center(
+        child: Text(
+          '图片文件不存在',
+          style: TextStyle(color: Colors.white70),
+        ),
+      );
+    }
+
+    return InteractiveViewer(
+      transformationController: _controller,
+      minScale: 0.5,
+      maxScale: 6,
+      boundaryMargin: const EdgeInsets.all(80),
+      child: Center(
+        child: Image.file(
+          file,
+          fit: BoxFit.contain,
+          errorBuilder: (context, error, stackTrace) {
+            return const Center(
+              child: Icon(
+                Icons.broken_image_outlined,
+                color: Colors.white70,
+                size: 56,
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _ImagePreviewItem {
+  const _ImagePreviewItem({
+    required this.path,
+    required this.title,
+  });
+
+  final String path;
+  final String title;
 }

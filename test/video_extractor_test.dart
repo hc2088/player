@@ -78,4 +78,42 @@ void main() {
     expect(items.single.url, 'https://media.example.com/movie.mp4');
     expect(items.single.isVideo, isTrue);
   });
+
+  test('extractMediaUrls returns image items', () async {
+    final executor = _FakeScriptExecutor(jsonEncode([
+      {
+        'type': 'image',
+        'url': 'https://media.example.com/photo-a.jpg',
+        'name': 'photo a',
+      },
+      {
+        'type': 'image',
+        'url': 'https://media.example.com/photo-b.webp.txt?size=large',
+        'name': 'photo b',
+      },
+      {
+        'type': 'image',
+        'url': 'data:image/png;base64,AAA',
+        'name': 'inline image',
+      },
+      {
+        'type': 'image',
+        'url': 'https://media.example.com/photo-a.jpg',
+        'name': 'photo a duplicate',
+      },
+    ]));
+
+    final items = await VideoExtractor.extractMediaUrls(executor);
+    final imageItems = items.where((item) => item.isImage).toList();
+
+    expect(items, hasLength(2));
+    expect(imageItems, hasLength(2));
+    expect(
+      imageItems.map((item) => item.url),
+      containsAll([
+        'https://media.example.com/photo-a.jpg',
+        'https://media.example.com/photo-b.webp.txt?size=large',
+      ]),
+    );
+  });
 }

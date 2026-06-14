@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-class PasswordInputDialog extends StatefulWidget {
+class PasswordInputDialog extends StatelessWidget {
   const PasswordInputDialog({
     super.key,
     required this.title,
@@ -9,10 +9,33 @@ class PasswordInputDialog extends StatefulWidget {
   final String title;
 
   @override
-  State<PasswordInputDialog> createState() => _PasswordInputDialogState();
+  Widget build(BuildContext context) {
+    return PasswordInputDialogPanel(
+      title: title,
+      onCancel: () => Navigator.of(context).pop(),
+      onSubmit: (password) => Navigator.of(context).pop(password),
+    );
+  }
 }
 
-class _PasswordInputDialogState extends State<PasswordInputDialog> {
+class PasswordInputDialogPanel extends StatefulWidget {
+  const PasswordInputDialogPanel({
+    super.key,
+    required this.title,
+    required this.onCancel,
+    required this.onSubmit,
+  });
+
+  final String title;
+  final VoidCallback onCancel;
+  final ValueChanged<String> onSubmit;
+
+  @override
+  State<PasswordInputDialogPanel> createState() =>
+      _PasswordInputDialogPanelState();
+}
+
+class _PasswordInputDialogPanelState extends State<PasswordInputDialogPanel> {
   final TextEditingController _controller = TextEditingController();
 
   @override
@@ -22,7 +45,7 @@ class _PasswordInputDialogState extends State<PasswordInputDialog> {
   }
 
   void _submit() {
-    Navigator.of(context).pop(_controller.text);
+    widget.onSubmit(_controller.text);
   }
 
   @override
@@ -40,7 +63,7 @@ class _PasswordInputDialogState extends State<PasswordInputDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: widget.onCancel,
           child: const Text('取消'),
         ),
         FilledButton(
